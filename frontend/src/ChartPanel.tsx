@@ -4,29 +4,49 @@ interface ChartPanelProps {
   simulationData: any;
 }
 
+function pickSplSeries(simulationData: any): number[] {
+  const series = simulationData?.series ?? {};
+
+  if (Array.isArray(series.spl_front)) return series.spl_front;
+  if (Array.isArray(series.spl)) return series.spl;
+  if (Array.isArray(simulationData?.spl)) return simulationData.spl;
+  if (Array.isArray(simulationData?.mock_spl)) return simulationData.mock_spl;
+
+  const firstNumericSeries = Object.values(series).find((value) => Array.isArray(value));
+  return Array.isArray(firstNumericSeries) ? firstNumericSeries : [];
+}
+
 export default function ChartPanel({ simulationData }: ChartPanelProps) {
   if (!simulationData) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', background: '#f9f9f9', color: '#888' }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          height: '100%',
+          background: '#f9f9f9',
+          color: '#888',
+        }}
+      >
         Click "Run Simulation" to generate acoustic graphs.
       </div>
     );
   }
 
-  // Extract the stable arrays from Contract v1 (with fallbacks for our mock data if os-lem is missing)
-  const freqs = simulationData.frequencies_hz || [20, 50, 100, 1000];
-  const spl = simulationData.spl || simulationData.mock_spl || [];
-  const zin = simulationData.zin_mag_ohm || [];
+  const freqs = simulationData.frequencies_hz ?? [20, 50, 100, 1000];
+  const spl = pickSplSeries(simulationData);
+  const zin = simulationData.properties?.zin_mag_ohm ?? simulationData.zin_mag_ohm ?? [];
 
   const options = {
-    animation: false, // Turn off animation for maximum "real-time" performance later
+    animation: false,
     tooltip: {
       trigger: 'axis',
-      axisPointer: { type: 'cross' }
+      axisPointer: { type: 'cross' },
     },
     legend: {
       data: ['SPL (dB)', 'Impedance (Ohm)'],
-      bottom: 0
+      bottom: 0,
     },
     grid: { left: '5%', right: '5%', top: '10%', bottom: '15%' },
     xAxis: {
@@ -36,8 +56,8 @@ export default function ChartPanel({ simulationData }: ChartPanelProps) {
       nameGap: 25,
       data: freqs,
       axisLabel: {
-        formatter: (value: string) => `${Number(value)}`
-      }
+        formatter: (value: string) => `${Number(value)}`,
+      },
     },
     yAxis: [
       {
@@ -45,15 +65,15 @@ export default function ChartPanel({ simulationData }: ChartPanelProps) {
         name: 'SPL (dB)',
         position: 'left',
         axisLine: { show: true, lineStyle: { color: '#5470C6' } },
-        axisLabel: { formatter: '{value} dB' }
+        axisLabel: { formatter: '{value} dB' },
       },
       {
         type: 'value',
         name: 'Zin (Ohm)',
         position: 'right',
         axisLine: { show: true, lineStyle: { color: '#91CC75' } },
-        axisLabel: { formatter: '{value} Ω' }
-      }
+        axisLabel: { formatter: '{value} Ω' },
+      },
     ],
     series: [
       {
@@ -62,18 +82,18 @@ export default function ChartPanel({ simulationData }: ChartPanelProps) {
         smooth: true,
         showSymbol: false,
         data: spl,
-        lineStyle: { width: 2, color: '#5470C6' }
+        lineStyle: { width: 2, color: '#5470C6' },
       },
       {
         name: 'Impedance (Ohm)',
         type: 'line',
-        yAxisIndex: 1, // Map this to the right-side Y axis
+        yAxisIndex: 1,
         smooth: true,
         showSymbol: false,
         data: zin,
-        lineStyle: { width: 2, color: '#91CC75' }
-      }
-    ]
+        lineStyle: { width: 2, color: '#91CC75' },
+      },
+    ],
   };
 
   return <ReactECharts option={options} style={{ height: '100%', width: '100%' }} />;
