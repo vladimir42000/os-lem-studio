@@ -20,3 +20,15 @@ env/
 # OS artifacts
 .DS_Store
 Thumbs.db
+
+# Studio local/generated artifacts
+frontend/*.tsbuildinfo
+studio_*_probe*.txt
+status.md
+status.sh
+
+# os-lem-studio local/generated artifacts
+frontend/*.tsbuildinfo
+studio_*_probe*.txt
+status.md
+status.sh
