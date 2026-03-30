@@ -1,0 +1,22 @@
+# Node / Frontend
+node_modules/
+dist/
+*.log
+.env
+
+# Python / Backend
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+ENV/
+env/
+*.egg-info/
+.pytest_cache/
+.coverage
+
+# OS artifacts
+.DS_Store
+Thumbs.db
