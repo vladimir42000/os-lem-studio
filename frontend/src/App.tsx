@@ -1,175 +1,120 @@
-import { useCallback, useMemo, useState } from 'react';
-import ReactFlow, {
-  Background,
-  Controls,
-  addEdge,
-  applyEdgeChanges,
-  applyNodeChanges,
-  Connection,
-  Edge,
-  EdgeChange,
-  NodeChange,
-} from 'reactflow';
+import { useCallback, useState } from 'react';
+import ReactFlow, { Background, Controls, useNodesState, useEdgesState, addEdge, Connection, Edge } from 'reactflow';
 import 'reactflow/dist/style.css';
 import Inspector from './Inspector';
 import ChartPanel from './ChartPanel';
 import { buildModelDict } from './translator';
-import type { CanvasEdge, CanvasNode } from './types';
 
-type TopologyId = 'closed_box' | 'bass_reflex' | 'transmission_line' | 'horn';
+type TopologyKey = 'closed_box' | 'bass_reflex' | 'transmission_line' | 'horn';
 
-type TopologyMeta = {
-  id: TopologyId;
-  label: string;
-  status: 'supported' | 'upcoming';
-  summary: string;
-  detail: string;
-};
-
-const TOPOLOGIES: TopologyMeta[] = [
+const initialNodes = [
   {
-    id: 'closed_box',
-    label: 'Closed Box',
-    status: 'supported',
-    summary: 'Fully supported default path for this Studio build.',
-    detail:
-      'Choose a closed-box template first, then refine parameters and inspect the plots. This is the recommended working path today.',
+    id: 'node_driver_1',
+    position: { x: 250, y: 150 },
+    data: {
+      type: 'driver',
+      label: '12NW100 Driver',
+      model: 'ts_classic',
+      Sd: 531,
+      Bl: 21.3,
+      Re: 5.0,
+      Mms: 94,
+      Cms: 0.15,
+      Rms: 4.1,
+      Le: 1.4,
+    },
   },
   {
-    id: 'bass_reflex',
-    label: 'Bass Reflex',
-    status: 'upcoming',
-    summary: 'Visible as a near-term topology family, but not productized yet.',
-    detail:
-      'The guided entry exists now so the workflow is topology-first, but the solver-backed Studio path remains upcoming in a later bounded patch.',
+    id: 'node_volume_1',
+    position: { x: 500, y: 50 },
+    data: { type: 'volume', label: 'Rear Chamber', Vb: 50.0 },
   },
   {
-    id: 'transmission_line',
-    label: 'Transmission Line',
-    status: 'upcoming',
-    summary: 'Visible now for workflow direction; supported implementation comes later.',
-    detail:
-      'Transmission line remains a planned near-term family. The current Studio build does not yet expose a guided, supported TL editing path.',
-  },
-  {
-    id: 'horn',
-    label: 'Horn',
-    status: 'upcoming',
-    summary: 'Reserved as a first-class family, but still upcoming in Studio.',
-    detail:
-      'Horn design is explicitly in scope for the product direction, but this build keeps the entry honest and avoids claiming a finished guided horn workflow.',
+    id: 'node_radiator_1',
+    position: { x: 500, y: 250 },
+    data: { type: 'radiator', label: 'Front Radiation', model: 'infinite_baffle_piston', Sd: 531 },
   },
 ];
 
-function createClosedBoxNodes(): CanvasNode[] {
-  return [
-    {
-      id: 'node_driver_1',
-      type: 'default',
-      position: { x: 250, y: 150 },
-      data: {
-        type: 'driver',
-        label: '12NW100 Driver',
-        model: 'ts_classic',
-        Sd: 531,
-        Bl: 21.3,
-        Re: 5.0,
-        Mms: 94,
-        Cms: 0.15,
-        Rms: 4.1,
-        Le: 1.4,
-      },
-    } as CanvasNode,
-    {
-      id: 'node_volume_1',
-      type: 'default',
-      position: { x: 500, y: 50 },
-      data: {
-        type: 'volume',
-        label: 'Rear Chamber',
-        Vb: 50.0,
-      },
-    } as CanvasNode,
-    {
-      id: 'node_radiator_1',
-      type: 'default',
-      position: { x: 500, y: 250 },
-      data: {
-        type: 'radiator',
-        label: 'Front Radiation',
-        model: 'infinite_baffle_piston',
-        Sd: 531,
-      },
-    } as CanvasNode,
-  ];
-}
+const initialEdges = [
+  { id: 'edge-1', source: 'node_driver_1', target: 'node_volume_1' },
+  { id: 'edge-2', source: 'node_driver_1', target: 'node_radiator_1' },
+];
 
-function createClosedBoxEdges(): CanvasEdge[] {
-  return [
-    { id: 'edge-1', source: 'node_driver_1', target: 'node_volume_1' } as CanvasEdge,
-    { id: 'edge-2', source: 'node_driver_1', target: 'node_radiator_1' } as CanvasEdge,
-  ];
-}
+const TOPOLOGY_OPTIONS: Array<{
+  key: TopologyKey;
+  title: string;
+  subtitle: string;
+  status: 'supported' | 'upcoming';
+  description: string;
+}> = [
+  {
+    key: 'closed_box',
+    title: 'Closed Box',
+    subtitle: 'Stable supported path',
+    status: 'supported',
+    description:
+      'Use the current validated Studio workflow: choose the closed-box family, run simulation manually, and inspect plots.',
+  },
+  {
+    key: 'bass_reflex',
+    title: 'Bass Reflex',
+    subtitle: 'Upcoming topology family',
+    status: 'upcoming',
+    description:
+      'Visible as a near-term template option, but not yet implemented as a complete Studio solver workflow in this patch.',
+  },
+  {
+    key: 'transmission_line',
+    title: 'Transmission Line',
+    subtitle: 'Upcoming topology family',
+    status: 'upcoming',
+    description:
+      'Reserved for the guided topology workflow phase. Shown honestly here without pretending that support already exists.',
+  },
+  {
+    key: 'horn',
+    title: 'Horn',
+    subtitle: 'Upcoming topology family',
+    status: 'upcoming',
+    description:
+      'Intended as a later topology-first entry option. This patch only establishes the entry framing, not horn implementation.',
+  },
+];
 
 export default function App() {
-  const [nodes, setNodes] = useState<CanvasNode[]>(createClosedBoxNodes());
-  const [edges, setEdges] = useState<CanvasEdge[]>(createClosedBoxEdges());
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>('node_driver_1');
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes as any);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges as any);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [simulationResult, setSimulationResult] = useState<any>(null);
-  const [selectedTopology, setSelectedTopology] = useState<TopologyId>('closed_box');
-  const [showAdvancedCanvas, setShowAdvancedCanvas] = useState<boolean>(false);
+  const [activeTopology, setActiveTopology] = useState<TopologyKey>('closed_box');
+  const [showAdvancedCanvas, setShowAdvancedCanvas] = useState(false);
 
-  const activeTopology = useMemo(
-    () => TOPOLOGIES.find((topology) => topology.id === selectedTopology) ?? TOPOLOGIES[0],
-    [selectedTopology]
+  const onConnect = useCallback(
+    (params: Edge | Connection) => setEdges((eds) => addEdge(params, eds)),
+    [setEdges],
   );
 
-  const selectedNode = useMemo(
-    () => nodes.find((node) => node.id === selectedNodeId) ?? null,
-    [nodes, selectedNodeId]
-  );
-
-  const onNodesChange = useCallback((changes: NodeChange[]) => {
-    setNodes((currentNodes) => applyNodeChanges(changes, currentNodes) as CanvasNode[]);
+  const onSelectionChange = useCallback((params: any) => {
+    setSelectedNodeId(params.nodes.length > 0 ? params.nodes[0].id : null);
   }, []);
 
-  const onEdgesChange = useCallback((changes: EdgeChange[]) => {
-    setEdges((currentEdges) => applyEdgeChanges(changes, currentEdges) as CanvasEdge[]);
-  }, []);
+  const updateNodeData = (id: string, newData: any) => {
+    setNodes((nds) => nds.map((n) => (n.id === id ? { ...n, data: newData } : n)));
+  };
 
-  const onConnect = useCallback((params: Edge | Connection) => {
-    setEdges((currentEdges) => addEdge(params, currentEdges) as CanvasEdge[]);
-  }, []);
-
-  const onSelectionChange = useCallback((params: { nodes?: Array<{ id: string }> }) => {
-    setSelectedNodeId(params.nodes && params.nodes.length > 0 ? params.nodes[0].id : null);
-  }, []);
-
-  const updateNodeData = useCallback((id: string, newData: CanvasNode['data']) => {
-    setNodes((currentNodes) =>
-      currentNodes.map((node) => (node.id === id ? ({ ...node, data: newData } as CanvasNode) : node))
-    );
-  }, []);
-
-  const applyClosedBoxTemplate = useCallback(() => {
-    setSelectedTopology('closed_box');
-    setNodes(createClosedBoxNodes());
-    setEdges(createClosedBoxEdges());
-    setSelectedNodeId('node_driver_1');
-    setShowAdvancedCanvas(false);
-  }, []);
+  const activeTemplate = TOPOLOGY_OPTIONS.find((option) => option.key === activeTopology) ?? TOPOLOGY_OPTIONS[0];
+  const closedBoxSelected = activeTopology === 'closed_box';
 
   const handleSimulate = async () => {
-    if (selectedTopology !== 'closed_box') {
-      alert(
-        `${activeTopology.label} is not yet a supported Studio simulation path. Switch back to Closed Box to use the validated workflow in this build.`
-      );
+    if (!closedBoxSelected) {
+      alert(`${activeTemplate.title} is not implemented yet in Studio. Switch back to Closed Box to run the current supported workflow.`);
       return;
     }
 
     const freqs = Array.from({ length: 150 }, (_, i) => 20 * Math.pow(1000 / 20, i / 149));
     const payload = {
-      model_dict: buildModelDict(nodes, edges),
+      model_dict: buildModelDict(nodes as any, edges as any),
       frequencies_hz: freqs,
       experimental_mode: false,
     };
@@ -181,30 +126,15 @@ export default function App() {
         body: JSON.stringify(payload),
       });
       const data = await res.json();
-      if (data.status === 'success') {
-        setSimulationResult(data.data);
-      } else {
-        alert(`Solver Error: ${JSON.stringify(data)}`);
-      }
+      if (data.status === 'success') setSimulationResult(data.data);
+      else alert(`Solver Error: ${JSON.stringify(data)}`);
     } catch {
       alert('Failed to connect to backend.');
     }
   };
 
-  const runButtonDisabled = selectedTopology !== 'closed_box';
-
   return (
-    <div
-      style={{
-        width: '100vw',
-        height: '100vh',
-        display: 'flex',
-        flexDirection: 'column',
-        margin: 0,
-        padding: 0,
-        background: '#f4f6f8',
-      }}
-    >
+    <div style={{ width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', margin: 0, padding: 0, background: '#f4f6f8' }}>
       <div
         style={{
           padding: '15px 18px',
@@ -214,83 +144,96 @@ export default function App() {
           justifyContent: 'space-between',
           alignItems: 'center',
           gap: '12px',
+          flexWrap: 'wrap',
         }}
       >
         <div>
           <strong>os-lem Studio</strong>
-          <div style={{ fontSize: '12px', opacity: 0.8, marginTop: '2px' }}>
-            Topology-first guided entry with advanced canvas kept available.
+          <div style={{ fontSize: '12px', opacity: 0.85, marginTop: '4px' }}>
+            Topology-first workflow with the canvas preserved as advanced mode.
           </div>
         </div>
         <button
           onClick={handleSimulate}
-          disabled={runButtonDisabled}
+          disabled={!closedBoxSelected}
           title={
-            runButtonDisabled
-              ? 'Only Closed Box is a validated Studio simulation path in this build.'
-              : 'Run the current closed-box Studio simulation.'
+            closedBoxSelected
+              ? 'Run the current supported closed-box simulation workflow.'
+              : `${activeTemplate.title} is not implemented yet.`
           }
           style={{
-            padding: '8px 16px',
-            cursor: runButtonDisabled ? 'not-allowed' : 'pointer',
-            background: runButtonDisabled ? '#7b838f' : '#4caf50',
+            padding: '7px 16px',
+            cursor: closedBoxSelected ? 'pointer' : 'not-allowed',
+            background: closedBoxSelected ? '#4CAF50' : '#7b7f87',
             color: 'white',
             border: 'none',
             borderRadius: '4px',
             fontWeight: 600,
           }}
         >
-          Run Simulation
+          {closedBoxSelected ? 'Run Simulation' : `${activeTemplate.title} Not Yet Runnable`}
         </button>
       </div>
 
-      <div style={{ padding: '16px 18px 12px 18px', borderBottom: '1px solid #d8dde3', background: '#fff' }}>
-        <div style={{ marginBottom: '10px' }}>
-          <div style={{ fontSize: '18px', fontWeight: 700, marginBottom: '4px' }}>Start from a topology template</div>
-          <div style={{ fontSize: '13px', color: '#55606d' }}>
-            Choose the enclosure family first. Closed Box is the polished working path today; the canvas remains available as an advanced mode.
+      <div style={{ padding: '16px 18px 14px 18px', borderBottom: '1px solid #d7dde5', background: '#ffffff' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+          <div>
+            <div style={{ fontWeight: 700, marginBottom: '6px', color: '#1f2937' }}>Choose a topology template first</div>
+            <div style={{ fontSize: '13px', color: '#5b6470', maxWidth: '880px' }}>
+              Studio now starts from enclosure family selection. Closed Box is the current supported path. Bass Reflex,
+              Transmission Line, and Horn are shown as honest near-term template directions rather than hidden future work.
+            </div>
           </div>
+          <button
+            onClick={() => setShowAdvancedCanvas((value) => !value)}
+            style={{
+              padding: '7px 12px',
+              borderRadius: '4px',
+              border: '1px solid #b9c2ce',
+              background: showAdvancedCanvas ? '#eef4ff' : '#ffffff',
+              cursor: 'pointer',
+              fontWeight: 600,
+            }}
+          >
+            {showAdvancedCanvas ? 'Hide Advanced Canvas' : 'Show Advanced Canvas'}
+          </button>
         </div>
 
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-            gap: '12px',
-          }}
-        >
-          {TOPOLOGIES.map((topology) => {
-            const isSelected = topology.id === selectedTopology;
-            const isSupported = topology.status === 'supported';
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px', marginTop: '14px' }}>
+          {TOPOLOGY_OPTIONS.map((option) => {
+            const selected = option.key === activeTopology;
+            const supported = option.status === 'supported';
             return (
               <button
-                key={topology.id}
-                onClick={() => setSelectedTopology(topology.id)}
+                key={option.key}
+                onClick={() => setActiveTopology(option.key)}
                 style={{
                   textAlign: 'left',
                   padding: '14px',
-                  borderRadius: '10px',
-                  border: isSelected ? '2px solid #2f6fed' : '1px solid #cfd6de',
-                  background: isSelected ? '#eef4ff' : '#ffffff',
+                  borderRadius: '8px',
+                  border: selected ? '2px solid #2563eb' : '1px solid #cfd8e3',
+                  background: selected ? '#eff6ff' : '#ffffff',
                   cursor: 'pointer',
                 }}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                  <div style={{ fontWeight: 700, color: '#1f2933' }}>{topology.label}</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', alignItems: 'center' }}>
+                  <div style={{ fontWeight: 700, color: '#111827' }}>{option.title}</div>
                   <span
                     style={{
                       fontSize: '11px',
-                      fontWeight: 700,
-                      padding: '3px 8px',
+                      padding: '2px 8px',
                       borderRadius: '999px',
-                      background: isSupported ? '#daf5dd' : '#fff1cc',
-                      color: isSupported ? '#1f6b2d' : '#8a5a00',
+                      background: supported ? '#dcfce7' : '#fef3c7',
+                      color: supported ? '#166534' : '#92400e',
+                      fontWeight: 700,
+                      letterSpacing: '0.02em',
                     }}
                   >
-                    {isSupported ? 'Supported' : 'Upcoming'}
+                    {supported ? 'SUPPORTED' : 'UPCOMING'}
                   </span>
                 </div>
-                <div style={{ fontSize: '12px', color: '#52606d', lineHeight: 1.45 }}>{topology.summary}</div>
+                <div style={{ fontSize: '12px', color: '#4b5563', marginTop: '4px', fontWeight: 600 }}>{option.subtitle}</div>
+                <div style={{ fontSize: '12px', color: '#5b6470', marginTop: '10px', lineHeight: 1.45 }}>{option.description}</div>
               </button>
             );
           })}
@@ -299,103 +242,64 @@ export default function App() {
         <div
           style={{
             marginTop: '14px',
-            padding: '12px 14px',
-            borderRadius: '10px',
-            background: activeTopology.status === 'supported' ? '#edf8ee' : '#fff7df',
-            border: activeTopology.status === 'supported' ? '1px solid #cfe8d1' : '1px solid #f1d38b',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            gap: '16px',
-            flexWrap: 'wrap',
+            padding: '10px 12px',
+            borderRadius: '6px',
+            background: closedBoxSelected ? '#ecfdf3' : '#fff7ed',
+            color: closedBoxSelected ? '#166534' : '#9a3412',
+            fontSize: '13px',
+            lineHeight: 1.45,
           }}
         >
-          <div style={{ flex: 1, minWidth: '280px' }}>
-            <div style={{ fontWeight: 700, marginBottom: '4px', color: '#1f2933' }}>{activeTopology.label}</div>
-            <div style={{ fontSize: '13px', color: '#52606d', lineHeight: 1.45 }}>{activeTopology.detail}</div>
-          </div>
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-            <button
-              onClick={applyClosedBoxTemplate}
-              style={{
-                padding: '8px 14px',
-                borderRadius: '6px',
-                border: '1px solid #2f6fed',
-                background: activeTopology.id === 'closed_box' ? '#2f6fed' : '#ffffff',
-                color: activeTopology.id === 'closed_box' ? '#ffffff' : '#2f6fed',
-                cursor: 'pointer',
-                fontWeight: 600,
-              }}
-            >
-              Apply Closed Box Template
-            </button>
-            <button
-              onClick={() => setShowAdvancedCanvas((current) => !current)}
-              style={{
-                padding: '8px 14px',
-                borderRadius: '6px',
-                border: '1px solid #c0c9d2',
-                background: '#ffffff',
-                color: '#1f2933',
-                cursor: 'pointer',
-                fontWeight: 600,
-              }}
-            >
-              {showAdvancedCanvas ? 'Hide Advanced Canvas' : 'Open Advanced Canvas'}
-            </button>
-          </div>
+          {closedBoxSelected ? (
+            <>
+              <strong>Current supported workflow:</strong> Closed Box is the validated path. Run Simulation updates the current
+              result, and the plot workflow remains available for observable selection and reference comparison.
+            </>
+          ) : (
+            <>
+              <strong>{activeTemplate.title} is not implemented yet.</strong> This template is shown intentionally to establish
+              topology-first entry. Use Closed Box for the current working simulation path. The advanced canvas remains available
+              for inspection of the existing graph-based seed model.
+            </>
+          )}
         </div>
       </div>
 
       {showAdvancedCanvas ? (
-        <div style={{ display: 'flex', height: '40%', borderBottom: '2px solid #d8dde3', background: '#fff' }}>
-          <div style={{ flexGrow: 1, borderRight: '1px solid #e3e7eb' }}>
-            <div
-              style={{
-                padding: '10px 12px',
-                fontSize: '12px',
-                fontWeight: 700,
-                color: '#52606d',
-                borderBottom: '1px solid #eef2f5',
-                background: '#fafbfc',
-              }}
+        <div style={{ display: 'flex', height: '38%', borderBottom: '2px solid #d7dde5', background: '#fff' }}>
+          <div style={{ flexGrow: 1 }}>
+            <ReactFlow
+              nodes={nodes}
+              edges={edges}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              onConnect={onConnect}
+              onSelectionChange={onSelectionChange}
+              fitView
             >
-              Advanced Canvas Mode
-            </div>
-            <div style={{ height: 'calc(100% - 38px)' }}>
-              <ReactFlow
-                nodes={nodes}
-                edges={edges}
-                onNodesChange={onNodesChange}
-                onEdgesChange={onEdgesChange}
-                onConnect={onConnect}
-                onSelectionChange={onSelectionChange}
-                fitView
-              >
-                <Background />
-                <Controls />
-              </ReactFlow>
-            </div>
+              <Background />
+              <Controls />
+            </ReactFlow>
           </div>
-          <Inspector selectedNode={selectedNode} updateNodeData={updateNodeData} />
+          <Inspector selectedNode={(nodes.find((n) => n.id === selectedNodeId) as any) || null} updateNodeData={updateNodeData} />
         </div>
       ) : (
         <div
           style={{
-            padding: '16px 18px',
-            background: '#fff',
-            borderBottom: '2px solid #d8dde3',
-            color: '#52606d',
+            padding: '18px',
+            borderBottom: '2px solid #d7dde5',
+            background: '#ffffff',
+            color: '#4b5563',
             fontSize: '13px',
-            lineHeight: 1.5,
+            lineHeight: 1.55,
           }}
         >
-          <strong style={{ color: '#1f2933' }}>Advanced Canvas is currently hidden.</strong> Use it for node-level editing and free-form graph inspection.
-          The recommended Studio entry path in this phase is topology first, then simulate and inspect the plots.
+          <strong style={{ color: '#1f2937' }}>Advanced Canvas is hidden.</strong> The topology template selector is now the primary
+          entry path. Open the advanced canvas when you want to inspect or edit the current graph-based seed model directly.
         </div>
       )}
 
-      <div style={{ flex: 1, minHeight: 0, background: '#fff' }}>
+      <div style={{ flex: 1, minHeight: 0, width: '100%', background: '#fff' }}>
         <ChartPanel simulationData={simulationResult} />
       </div>
     </div>
