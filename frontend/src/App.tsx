@@ -7,21 +7,21 @@ import ReactFlow, {
   useEdgesState,
   useNodesState,
 } from 'reactflow';
+import type { Edge as ReactFlowEdge, Node as ReactFlowNode } from 'reactflow';
 import 'reactflow/dist/style.css';
 import Inspector from './Inspector';
 import ChartPanel from './ChartPanel';
 import { buildModelDict } from './translator';
-import { CanvasEdge, CanvasNode } from './types';
+import type { CanvasEdge, CanvasNode } from './types';
 
 type TopologyId = 'closed_box' | 'bass_reflex' | 'transmission_line' | 'horn';
 
-interface TemplateSpec {
-  nodes: CanvasNode[];
-  edges: CanvasEdge[];
-  selectedNodeId: string | null;
-}
+type TemplateGraph = {
+  nodes: ReactFlowNode[];
+  edges: ReactFlowEdge[];
+};
 
-const closedBoxTemplate: TemplateSpec = {
+const closedBoxTemplate: TemplateGraph = {
   nodes: [
     {
       id: 'node_driver_1',
@@ -66,15 +66,14 @@ const closedBoxTemplate: TemplateSpec = {
     { id: 'edge-1', source: 'node_driver_1', target: 'node_volume_1' },
     { id: 'edge-2', source: 'node_driver_1', target: 'node_radiator_1' },
   ],
-  selectedNodeId: 'node_driver_1',
 };
 
-const bassReflexTemplate: TemplateSpec = {
+const bassReflexTemplate: TemplateGraph = {
   nodes: [
     {
       id: 'node_driver_1',
       type: 'default',
-      position: { x: 220, y: 150 },
+      position: { x: 240, y: 160 },
       data: {
         type: 'driver',
         label: '12NW100 Driver',
@@ -91,28 +90,28 @@ const bassReflexTemplate: TemplateSpec = {
     {
       id: 'node_volume_1',
       type: 'default',
-      position: { x: 470, y: 40 },
+      position: { x: 500, y: 50 },
       data: {
         type: 'volume',
         label: 'Rear Chamber',
-        Vb: 42.0,
+        Vb: 65.0,
       },
     },
     {
       id: 'node_port_1',
       type: 'default',
-      position: { x: 470, y: 150 },
+      position: { x: 520, y: 165 },
       data: {
         type: 'duct',
         label: 'Port',
-        areaCm2: 18.0,
-        lengthCm: 18.0,
+        areaCm2: 120,
+        lengthCm: 20,
       },
     },
     {
       id: 'node_radiator_1',
       type: 'default',
-      position: { x: 470, y: 260 },
+      position: { x: 520, y: 285 },
       data: {
         type: 'radiator',
         label: 'Front Radiation',
@@ -126,34 +125,32 @@ const bassReflexTemplate: TemplateSpec = {
     { id: 'edge-2', source: 'node_driver_1', target: 'node_radiator_1' },
     { id: 'edge-3', source: 'node_volume_1', target: 'node_port_1' },
   ],
-  selectedNodeId: 'node_driver_1',
 };
 
-function cloneNodes(nodes: CanvasNode[]): CanvasNode[] {
-  return nodes.map((node) => ({
-    ...node,
-    position: { ...node.position },
-    data: { ...node.data },
-  }));
-}
+const placeholderTemplate = (label: string): TemplateGraph => ({
+  nodes: [
+    {
+      id: 'node_placeholder_1',
+      type: 'default',
+      position: { x: 320, y: 170 },
+      data: {
+        type: 'volume',
+        label,
+        Vb: 1,
+      },
+    },
+  ],
+  edges: [],
+});
 
-function cloneEdges(edges: CanvasEdge[]): CanvasEdge[] {
-  return edges.map((edge) => ({ ...edge }));
-}
-
-function getTemplate(topology: TopologyId): TemplateSpec {
-  if (topology === 'bass_reflex') {
-    return {
-      nodes: cloneNodes(bassReflexTemplate.nodes),
-      edges: cloneEdges(bassReflexTemplate.edges),
-      selectedNodeId: bassReflexTemplate.selectedNodeId,
-    };
-  }
-
+function cloneTemplateGraph(template: TemplateGraph): TemplateGraph {
   return {
-    nodes: cloneNodes(closedBoxTemplate.nodes),
-    edges: cloneEdges(closedBoxTemplate.edges),
-    selectedNodeId: closedBoxTemplate.selectedNodeId,
+    nodes: template.nodes.map((node) => ({
+      ...node,
+      position: { ...node.position },
+      data: { ...node.data },
+    })),
+    edges: template.edges.map((edge) => ({ ...edge })),
   };
 }
 
@@ -227,44 +224,66 @@ function LabeledInput({
   );
 }
 
-function SectionTitle({ children }: { children: string }) {
-  return <div style={{ fontWeight: 700, marginBottom: 12 }}>{children}</div>;
-}
-
-export default function App() {
-  const initialTemplate = useMemo(() => getTemplate('closed_box'), []);
-  const [selectedTopology, setSelectedTopology] = useState<TopologyId>('closed_box');
-  const [showAdvancedCanvas, setShowAdvancedCanvas] = useState(false);
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialTemplate.nodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialTemplate.edges);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(initialTemplate.selectedNodeId);
-  const [simulationResult, setSimulationResult] = useState<any>(null);
-
-  const isClosedBox = selectedTopology === 'closed_box';
-  const isBassReflex = selectedTopology === 'bass_reflex';
-  const hasGuidedTemplate = isClosedBox || isBassReflex;
-  const simulationSupported = isClosedBox;
-
-  const toCanvasNode = useCallback((node: any): CanvasNode => ({
+function toCanvasNode(node: any): CanvasNode {
+  return {
     id: String(node.id),
     type: (node.type ?? 'default') as CanvasNode['type'],
     position: {
       x: Number(node.position?.x ?? 0),
       y: Number(node.position?.y ?? 0),
     },
-    data: node.data,
-  }), []);
+    data: node.data ?? {},
+  };
+}
 
-  const toCanvasEdge = useCallback((edge: any): CanvasEdge => ({
+function toCanvasEdge(edge: any): CanvasEdge {
+  return {
     id: String(edge.id),
     source: String(edge.source),
     sourceHandle: edge.sourceHandle ?? null,
     target: String(edge.target),
     targetHandle: edge.targetHandle ?? null,
-  }), []);
+  };
+}
 
-  const canvasNodes = useMemo(() => nodes.map((node) => toCanvasNode(node)), [nodes, toCanvasNode]);
-  const canvasEdges = useMemo(() => edges.map((edge) => toCanvasEdge(edge)), [edges, toCanvasEdge]);
+export default function App() {
+  const [selectedTopology, setSelectedTopology] = useState<TopologyId>('closed_box');
+  const [showAdvancedCanvas, setShowAdvancedCanvas] = useState(false);
+  const [nodes, setNodes, onNodesChange] = useNodesState(cloneTemplateGraph(closedBoxTemplate).nodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(cloneTemplateGraph(closedBoxTemplate).edges);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>('node_driver_1');
+  const [simulationResult, setSimulationResult] = useState<any>(null);
+
+  const canRunSimulation = selectedTopology === 'closed_box';
+
+  const applyTemplate = useCallback(
+    (topology: TopologyId) => {
+      const graph =
+        topology === 'closed_box'
+          ? cloneTemplateGraph(closedBoxTemplate)
+          : topology === 'bass_reflex'
+            ? cloneTemplateGraph(bassReflexTemplate)
+            : topology === 'transmission_line'
+              ? cloneTemplateGraph(placeholderTemplate('Transmission Line template preview'))
+              : cloneTemplateGraph(placeholderTemplate('Horn template preview'));
+
+      setNodes(graph.nodes);
+      setEdges(graph.edges);
+      setSelectedNodeId(graph.nodes[0]?.id ?? null);
+    },
+    [setEdges, setNodes],
+  );
+
+  const handleTopologySelect = useCallback(
+    (topology: TopologyId) => {
+      setSelectedTopology(topology);
+      if (topology !== 'closed_box') {
+        setSimulationResult(null);
+      }
+      applyTemplate(topology);
+    },
+    [applyTemplate],
+  );
 
   const onConnect = useCallback(
     (params: Connection) => {
@@ -273,16 +292,12 @@ export default function App() {
     [setEdges],
   );
 
-  const patchNodeData = useCallback(
-    (id: string, patch: Record<string, unknown>) => {
-      setNodes((currentNodes) =>
-        currentNodes.map((node) => (node.id === id ? { ...node, data: { ...node.data, ...patch } } : node)),
-      );
-    },
-    [setNodes],
-  );
+  const onSelectionChange = useCallback((params: any) => {
+    const selectedNodes = Array.isArray(params?.nodes) ? params.nodes : [];
+    setSelectedNodeId(selectedNodes[0]?.id ?? null);
+  }, []);
 
-  const replaceNodeData = useCallback(
+  const updateNodeData = useCallback(
     (id: string, newData: any) => {
       setNodes((currentNodes) =>
         currentNodes.map((node) => (node.id === id ? { ...node, data: newData } : node)),
@@ -291,26 +306,61 @@ export default function App() {
     [setNodes],
   );
 
-  const loadTopologyTemplate = useCallback(
-    (topology: TopologyId) => {
-      const template = getTemplate(topology);
-      setSelectedTopology(topology);
-      setNodes(template.nodes);
-      setEdges(template.edges);
-      setSelectedNodeId(template.selectedNodeId);
-      setSimulationResult(null);
-      setShowAdvancedCanvas(false);
+  const patchNodeData = useCallback(
+    (id: string, patch: Record<string, unknown>) => {
+      setNodes((currentNodes) =>
+        currentNodes.map((node) =>
+          node.id === id ? { ...node, data: { ...(node.data ?? {}), ...patch } } : node,
+        ),
+      );
     },
-    [setEdges, setNodes],
+    [setNodes],
   );
 
   const resetCurrentTemplate = useCallback(() => {
-    loadTopologyTemplate(selectedTopology);
-  }, [loadTopologyTemplate, selectedTopology]);
+    applyTemplate(selectedTopology);
+  }, [applyTemplate, selectedTopology]);
+
+  const canvasNodes = useMemo(() => nodes.map(toCanvasNode), [nodes]);
+  const canvasEdges = useMemo(() => edges.map(toCanvasEdge), [edges]);
+
+  const selectedCanvasNode = useMemo<CanvasNode | null>(() => {
+    const rfNode = nodes.find((node) => node.id === selectedNodeId);
+    return rfNode ? toCanvasNode(rfNode) : null;
+  }, [nodes, selectedNodeId]);
+
+  const driverNode = useMemo<CanvasNode | null>(() => {
+    const rfNode = nodes.find((node) => node.id === 'node_driver_1');
+    return rfNode ? toCanvasNode(rfNode) : null;
+  }, [nodes]);
+
+  const volumeNode = useMemo<CanvasNode | null>(() => {
+    const rfNode = nodes.find((node) => node.id === 'node_volume_1');
+    return rfNode ? toCanvasNode(rfNode) : null;
+  }, [nodes]);
+
+  const radiatorNode = useMemo<CanvasNode | null>(() => {
+    const rfNode = nodes.find((node) => node.id === 'node_radiator_1');
+    return rfNode ? toCanvasNode(rfNode) : null;
+  }, [nodes]);
+
+  const portNode = useMemo<CanvasNode | null>(() => {
+    const rfNode = nodes.find((node) => node.id === 'node_port_1');
+    return rfNode ? toCanvasNode(rfNode) : null;
+  }, [nodes]);
+
+  const topologyRuntimeMessage =
+    selectedTopology === 'closed_box'
+      ? 'Closed Box is the current stable runnable Studio workflow.'
+      : selectedTopology === 'bass_reflex'
+        ? 'Bass Reflex now has a guided editor, but the current Studio → translator → backend line is not yet validated end-to-end for trustworthy plots. Simulation remains disabled in this patch.'
+        : selectedTopology === 'transmission_line'
+          ? 'Transmission Line remains upcoming in the current Studio line.'
+          : 'Horn remains upcoming in the current Studio line.';
 
   const handleSimulate = useCallback(async () => {
-    if (!simulationSupported) {
-      alert('Bass Reflex editing is now available, but simulation support for this topology lands in a follow-up patch. Closed Box remains the current supported run path.');
+    if (!canRunSimulation) {
+      alert('Only the Closed Box workflow is runnable in the current Studio line. Bass Reflex remains guided-only until end-to-end validation is complete.');
       return;
     }
 
@@ -336,33 +386,15 @@ export default function App() {
     } catch (_error) {
       alert('Failed to connect to backend.');
     }
-  }, [canvasEdges, canvasNodes, simulationSupported]);
-
-  const selectedNode = useMemo<CanvasNode | null>(() => {
-    const match = nodes.find((node) => node.id === selectedNodeId);
-    return match ? toCanvasNode(match) : null;
-  }, [nodes, selectedNodeId, toCanvasNode]);
-
-  const driverNode = useMemo<CanvasNode | null>(
-    () => canvasNodes.find((node) => node.id === 'node_driver_1') ?? null,
-    [canvasNodes],
-  );
-  const volumeNode = useMemo<CanvasNode | null>(
-    () => canvasNodes.find((node) => node.id === 'node_volume_1') ?? null,
-    [canvasNodes],
-  );
-  const radiatorNode = useMemo<CanvasNode | null>(
-    () => canvasNodes.find((node) => node.id === 'node_radiator_1') ?? null,
-    [canvasNodes],
-  );
-  const portNode = useMemo<CanvasNode | null>(
-    () => canvasNodes.find((node) => node.id === 'node_port_1') ?? null,
-    [canvasNodes],
-  );
+  }, [canRunSimulation, canvasEdges, canvasNodes]);
 
   const renderClosedBoxEditor = () => {
     if (!driverNode || !volumeNode || !radiatorNode) {
-      return <div style={{ color: '#991b1b', lineHeight: 1.5 }}>The closed-box template is incomplete.</div>;
+      return (
+        <div style={{ color: '#991b1b', lineHeight: 1.5 }}>
+          The closed-box template is incomplete. Switch to Advanced Canvas to inspect the raw nodes.
+        </div>
+      );
     }
 
     return (
@@ -370,12 +402,13 @@ export default function App() {
         <div style={{ marginBottom: 16 }}>
           <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>Closed Box Editor</div>
           <div style={{ fontSize: 13, color: '#475569', lineHeight: 1.5 }}>
-            Closed Box remains the stable supported Studio workflow. Use this guided panel for fast edits, then switch to the advanced canvas only when you need direct graph inspection.
+            This remains the safe end-to-end Studio workflow. Edit the main enclosure parameters here, then run
+            the simulation and inspect the plots below.
           </div>
         </div>
 
         <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 16 }}>
-          <SectionTitle>Driver</SectionTitle>
+          <div style={{ fontWeight: 700, marginBottom: 12 }}>Driver</div>
           <LabeledInput
             label="Label"
             value={driverNode.data.label ?? ''}
@@ -402,7 +435,7 @@ export default function App() {
         </div>
 
         <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 16, marginTop: 16 }}>
-          <SectionTitle>Rear Chamber</SectionTitle>
+          <div style={{ fontWeight: 700, marginBottom: 12 }}>Rear Chamber</div>
           <LabeledInput
             label="Volume"
             value={volumeNode.data.Vb ?? 50}
@@ -412,7 +445,7 @@ export default function App() {
         </div>
 
         <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 16, marginTop: 16 }}>
-          <SectionTitle>Front Radiation</SectionTitle>
+          <div style={{ fontWeight: 700, marginBottom: 12 }}>Front Radiation</div>
           <LabeledInput
             label="Label"
             value={radiatorNode.data.label ?? ''}
@@ -431,35 +464,43 @@ export default function App() {
 
   const renderBassReflexEditor = () => {
     if (!driverNode || !volumeNode || !radiatorNode || !portNode) {
-      return <div style={{ color: '#991b1b', lineHeight: 1.5 }}>The bass-reflex template is incomplete.</div>;
+      return (
+        <div style={{ color: '#991b1b', lineHeight: 1.5 }}>
+          The bass-reflex template is incomplete. Switch to Advanced Canvas to inspect the raw nodes.
+        </div>
+      );
     }
 
     return (
       <>
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>Bass Reflex Editor</div>
-          <div style={{ fontSize: 13, color: '#475569', lineHeight: 1.5 }}>
-            Bass Reflex is now a guided Studio workflow instead of a bare label. This patch surfaces the core enclosure and port parameters and keeps the advanced canvas available, while staying honest that simulation support has not landed yet.
+        <div
+          style={{
+            marginBottom: 16,
+            padding: '12px 14px',
+            borderRadius: 10,
+            background: '#fff7ed',
+            border: '1px solid #fdba74',
+            color: '#9a3412',
+          }}
+        >
+          <div style={{ fontWeight: 700, marginBottom: 6 }}>Bass Reflex validation status</div>
+          <div style={{ fontSize: 13, lineHeight: 1.55 }}>
+            Guided editing is available now, but the current Studio translator/backend contract is not yet validated
+            as a trustworthy end-to-end bass-reflex simulation path. In this line the workflow is intentionally
+            editor-first and simulation stays disabled.
           </div>
         </div>
 
-        <div
-          style={{
-            padding: '10px 12px',
-            background: '#fff7ed',
-            color: '#9a3412',
-            border: '1px solid #fdba74',
-            borderRadius: 8,
-            fontSize: 13,
-            lineHeight: 1.5,
-            marginBottom: 16,
-          }}
-        >
-          Bass Reflex editing is supported in the UI in this patch. Simulation remains disabled for this topology until the translator/kernel path is extended in a later bounded step.
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>Bass Reflex Editor</div>
+          <div style={{ fontSize: 13, color: '#475569', lineHeight: 1.5 }}>
+            Use this panel to set the main ported-box parameters while the runtime path is being validated. This
+            keeps the topology product-visible without implying parity with the stable Closed Box line.
+          </div>
         </div>
 
         <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 16 }}>
-          <SectionTitle>Driver</SectionTitle>
+          <div style={{ fontWeight: 700, marginBottom: 12 }}>Driver</div>
           <LabeledInput
             label="Label"
             value={driverNode.data.label ?? ''}
@@ -486,45 +527,40 @@ export default function App() {
         </div>
 
         <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 16, marginTop: 16 }}>
-          <SectionTitle>Rear Chamber</SectionTitle>
+          <div style={{ fontWeight: 700, marginBottom: 12 }}>Rear Chamber</div>
           <LabeledInput
             label="Volume"
-            value={volumeNode.data.Vb ?? 42}
+            value={volumeNode.data.Vb ?? 65}
             suffix="liters"
-            onChange={(value) => patchNodeData(volumeNode.id, { Vb: parsePositiveNumber(value, 42) })}
+            onChange={(value) => patchNodeData(volumeNode.id, { Vb: parsePositiveNumber(value, 65) })}
           />
         </div>
 
         <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 16, marginTop: 16 }}>
-          <SectionTitle>Port</SectionTitle>
+          <div style={{ fontWeight: 700, marginBottom: 12 }}>Port</div>
           <LabeledInput
-            label="Label"
-            value={portNode.data.label ?? ''}
-            onChange={(value) => patchNodeData(portNode.id, { label: value || 'Port' })}
-          />
-          <LabeledInput
-            label="Port Area"
-            value={portNode.data.areaCm2 ?? 18}
+            label="Port area"
+            value={portNode.data.areaCm2 ?? 120}
             suffix="cm²"
-            onChange={(value) => patchNodeData(portNode.id, { areaCm2: parsePositiveNumber(value, 18) })}
+            onChange={(value) => patchNodeData(portNode.id, { areaCm2: parsePositiveNumber(value, 120) })}
           />
           <LabeledInput
-            label="Port Length"
-            value={portNode.data.lengthCm ?? 18}
+            label="Port length"
+            value={portNode.data.lengthCm ?? 20}
             suffix="cm"
-            onChange={(value) => patchNodeData(portNode.id, { lengthCm: parsePositiveNumber(value, 18) })}
+            onChange={(value) => patchNodeData(portNode.id, { lengthCm: parsePositiveNumber(value, 20) })}
           />
         </div>
 
         <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 16, marginTop: 16 }}>
-          <SectionTitle>Front Radiation</SectionTitle>
+          <div style={{ fontWeight: 700, marginBottom: 12 }}>Front Radiation</div>
           <LabeledInput
             label="Label"
             value={radiatorNode.data.label ?? ''}
             onChange={(value) => patchNodeData(radiatorNode.id, { label: value || 'Front Radiation' })}
           />
           <LabeledInput
-            label="Radiating Area"
+            label="Radiating area"
             value={radiatorNode.data.Sd ?? 531}
             suffix="cm²"
             onChange={(value) => patchNodeData(radiatorNode.id, { Sd: parsePositiveNumber(value, 531) })}
@@ -534,32 +570,46 @@ export default function App() {
     );
   };
 
-  const renderPlaceholderEditor = (title: string, message: string) => (
+  const renderPlaceholderEditor = (title: string, body: string) => (
     <div>
       <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>{title}</div>
-      <div style={{ fontSize: 13, color: '#475569', lineHeight: 1.6 }}>{message}</div>
+      <div style={{ fontSize: 13, color: '#475569', lineHeight: 1.6 }}>{body}</div>
+      <div
+        style={{
+          marginTop: 18,
+          padding: '12px 14px',
+          borderRadius: 10,
+          background: '#f8fafc',
+          border: '1px solid #cbd5e1',
+          color: '#475569',
+          fontSize: 13,
+          lineHeight: 1.55,
+        }}
+      >
+        This topology remains upcoming. The Studio intentionally keeps the workflow honest here rather than
+        pretending backend support already exists.
+      </div>
     </div>
   );
 
-  const guidedEditor = isClosedBox
-    ? renderClosedBoxEditor()
-    : isBassReflex
-      ? renderBassReflexEditor()
-      : selectedTopology === 'transmission_line'
-        ? renderPlaceholderEditor(
-            'Transmission Line',
-            'Transmission Line is still upcoming. The topology family is visible in Studio now so the workflow is honest, but guided parameter editing and simulation support have not landed yet.',
-          )
-        : renderPlaceholderEditor(
-            'Horn',
-            'Horn is still upcoming. The topology family is visible in Studio now so the workflow is honest, but guided parameter editing and simulation support have not landed yet.',
-          );
-
-  const guidedWorkspaceNote = isClosedBox
-    ? 'Guided closed-box editing is active. Open the advanced canvas only when you need direct graph inspection.'
-    : isBassReflex
-      ? 'Bass Reflex guided editing is active. The advanced canvas shows the current driver / rear chamber / port / front-radiation template.'
-      : 'This topology is still upcoming. Studio keeps the product direction visible without pretending the workflow is complete.';
+  const renderGuidedEditor = () => {
+    if (selectedTopology === 'closed_box') {
+      return renderClosedBoxEditor();
+    }
+    if (selectedTopology === 'bass_reflex') {
+      return renderBassReflexEditor();
+    }
+    if (selectedTopology === 'transmission_line') {
+      return renderPlaceholderEditor(
+        'Transmission Line workflow',
+        'Transmission Line remains an upcoming guided topology. The current Studio line does not yet expose a trustworthy end-to-end TL path.',
+      );
+    }
+    return renderPlaceholderEditor(
+      'Horn workflow',
+      'Horn remains an upcoming guided topology. The current Studio line does not yet expose a trustworthy end-to-end horn path.',
+    );
+  };
 
   return (
     <div style={{ width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', margin: 0, padding: 0 }}>
@@ -576,159 +626,167 @@ export default function App() {
       >
         <div>
           <strong>os-lem Studio</strong>
-          <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>
-            Topology-first workflow with guided editing and advanced canvas fallback
-          </div>
+          <div style={{ fontSize: 12, color: '#cbd5e1', marginTop: 4 }}>{topologyRuntimeMessage}</div>
         </div>
-        <button
-          onClick={handleSimulate}
-          disabled={!simulationSupported}
-          title={simulationSupported ? 'Run the current supported topology.' : 'Only Closed Box simulation is supported in the current line.'}
-          style={{
-            padding: '8px 14px',
-            cursor: simulationSupported ? 'pointer' : 'not-allowed',
-            background: simulationSupported ? '#4CAF50' : '#64748b',
-            color: 'white',
-            border: 'none',
-            borderRadius: '6px',
-            opacity: simulationSupported ? 1 : 0.75,
-          }}
-        >
-          Run Simulation
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button
+            onClick={() => setShowAdvancedCanvas((value) => !value)}
+            style={{
+              padding: '5px 15px',
+              cursor: 'pointer',
+              background: '#475569',
+              color: 'white',
+              border: 'none',
+              borderRadius: '3px',
+            }}
+          >
+            {showAdvancedCanvas ? 'Hide Advanced Canvas' : 'Show Advanced Canvas'}
+          </button>
+          <button
+            onClick={handleSimulate}
+            disabled={!canRunSimulation}
+            style={{
+              padding: '5px 15px',
+              cursor: canRunSimulation ? 'pointer' : 'not-allowed',
+              background: canRunSimulation ? '#4CAF50' : '#64748b',
+              color: 'white',
+              border: 'none',
+              borderRadius: '3px',
+              opacity: canRunSimulation ? 1 : 0.85,
+            }}
+          >
+            {canRunSimulation ? 'Run Simulation' : 'Run Simulation (Closed Box only)'}
+          </button>
+        </div>
       </div>
 
-      <div style={{ padding: '16px 18px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 10 }}>Choose Topology</div>
+      <div style={{ padding: '14px 16px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: '#334155', marginBottom: 10 }}>Choose topology</div>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           <TopologyCard
             title="Closed Box"
-            subtitle="Stable supported workflow"
+            subtitle="Stable runnable workflow"
             status="Supported now"
             active={selectedTopology === 'closed_box'}
-            onClick={() => loadTopologyTemplate('closed_box')}
+            onClick={() => handleTopologySelect('closed_box')}
           />
           <TopologyCard
             title="Bass Reflex"
-            subtitle="First guided next topology"
-            status="Guided editor now, simulation next"
+            subtitle="Guided editor with validation gating"
+            status="Partial: simulation disabled"
             active={selectedTopology === 'bass_reflex'}
-            onClick={() => loadTopologyTemplate('bass_reflex')}
+            onClick={() => handleTopologySelect('bass_reflex')}
           />
           <TopologyCard
             title="Transmission Line"
-            subtitle="Upcoming topology family"
-            status="Not yet supported"
+            subtitle="Upcoming guided workflow"
+            status="Upcoming"
             active={selectedTopology === 'transmission_line'}
-            onClick={() => loadTopologyTemplate('transmission_line')}
+            onClick={() => handleTopologySelect('transmission_line')}
           />
           <TopologyCard
             title="Horn"
-            subtitle="Upcoming topology family"
-            status="Not yet supported"
+            subtitle="Upcoming guided workflow"
+            status="Upcoming"
             active={selectedTopology === 'horn'}
-            onClick={() => loadTopologyTemplate('horn')}
+            onClick={() => handleTopologySelect('horn')}
           />
         </div>
       </div>
 
-      <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-        <div
-          style={{
-            width: 360,
-            background: '#ffffff',
-            borderRight: '1px solid #e2e8f0',
-            padding: 18,
-            overflowY: 'auto',
-          }}
-        >
-          {guidedEditor}
-
-          <div style={{ display: 'flex', gap: 10, marginTop: 20, flexWrap: 'wrap' }}>
-            <button
-              onClick={() => setShowAdvancedCanvas((value) => !value)}
-              disabled={!hasGuidedTemplate}
-              style={{
-                padding: '9px 12px',
-                borderRadius: 8,
-                border: '1px solid #cbd5e1',
-                background: '#fff',
-                cursor: hasGuidedTemplate ? 'pointer' : 'not-allowed',
-                opacity: hasGuidedTemplate ? 1 : 0.6,
-              }}
+      <div style={{ display: 'flex', height: '60%', borderBottom: '2px solid #ccc' }}>
+        <div style={{ flexGrow: 1, background: '#f8fafc', display: 'flex', flexDirection: 'column' }}>
+          {showAdvancedCanvas ? (
+            <ReactFlow
+              nodes={nodes}
+              edges={edges}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              onConnect={onConnect}
+              onSelectionChange={onSelectionChange}
+              fitView
             >
-              {showAdvancedCanvas ? 'Hide Advanced Canvas' : 'Open Advanced Canvas'}
-            </button>
-            <button
-              onClick={resetCurrentTemplate}
-              disabled={!hasGuidedTemplate}
-              style={{
-                padding: '9px 12px',
-                borderRadius: 8,
-                border: '1px solid #cbd5e1',
-                background: '#fff',
-                cursor: hasGuidedTemplate ? 'pointer' : 'not-allowed',
-                opacity: hasGuidedTemplate ? 1 : 0.6,
-              }}
-            >
-              Reset Current Template
-            </button>
-          </div>
+              <Background />
+              <Controls />
+            </ReactFlow>
+          ) : (
+            <div style={{ padding: '20px 24px', overflow: 'auto' }}>
+              <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>
+                {selectedTopology === 'closed_box'
+                  ? 'Closed Box workflow'
+                  : selectedTopology === 'bass_reflex'
+                    ? 'Bass Reflex workflow'
+                    : selectedTopology === 'transmission_line'
+                      ? 'Transmission Line workflow'
+                      : 'Horn workflow'}
+              </div>
+              <div style={{ fontSize: 14, color: '#475569', lineHeight: 1.6, maxWidth: 800 }}>
+                {topologyRuntimeMessage}
+              </div>
+              <div
+                style={{
+                  marginTop: 18,
+                  padding: '14px 16px',
+                  borderRadius: 10,
+                  border: '1px solid #cbd5e1',
+                  background: '#ffffff',
+                  maxWidth: 820,
+                }}
+              >
+                <div style={{ fontWeight: 700, marginBottom: 8 }}>Workflow mode</div>
+                <div style={{ fontSize: 13, color: '#475569', lineHeight: 1.55 }}>
+                  Studio now starts topology-first. Guided editing is the primary path. Advanced Canvas remains
+                  available for direct graph inspection and manual node editing when needed.
+                </div>
+                <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
+                  <button
+                    onClick={() => setShowAdvancedCanvas(true)}
+                    style={{
+                      padding: '9px 12px',
+                      borderRadius: 8,
+                      border: '1px solid #cbd5e1',
+                      background: '#fff',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Open Advanced Canvas
+                  </button>
+                  <button
+                    onClick={resetCurrentTemplate}
+                    style={{
+                      padding: '9px 12px',
+                      borderRadius: 8,
+                      border: '1px solid #cbd5e1',
+                      background: '#fff',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Reset Current Template
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, minHeight: 0 }}>
-          <div style={{ padding: '12px 16px', borderBottom: '1px solid #e2e8f0', background: '#ffffff' }}>
-            <div style={{ fontWeight: 700, marginBottom: 4 }}>Workspace</div>
-            <div style={{ fontSize: 13, color: '#475569' }}>{guidedWorkspaceNote}</div>
-          </div>
-
-          <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-            <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-              {showAdvancedCanvas && hasGuidedTemplate ? (
-                <div style={{ flex: 1 }}>
-                  <ReactFlow
-                    nodes={nodes}
-                    edges={edges}
-                    onNodesChange={onNodesChange}
-                    onEdgesChange={onEdgesChange}
-                    onConnect={onConnect}
-                    onNodeClick={(_event, node) => setSelectedNodeId(node.id)}
-                    onPaneClick={() => setSelectedNodeId(null)}
-                    fitView
-                  >
-                    <Background />
-                    <Controls />
-                  </ReactFlow>
-                </div>
-              ) : (
-                <div
-                  style={{
-                    flex: 1,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    background: '#f8fafc',
-                    color: '#475569',
-                    padding: 24,
-                    textAlign: 'center',
-                    lineHeight: 1.6,
-                  }}
-                >
-                  {showAdvancedCanvas
-                    ? 'Advanced canvas is available only for the current guided template topologies.'
-                    : 'Guided editing is active. Use the topology-aware panel on the left, or open the advanced canvas when you need raw node inspection.'}
-                </div>
-              )}
-            </div>
-
-            {showAdvancedCanvas && hasGuidedTemplate ? (
-              <Inspector selectedNode={selectedNode} updateNodeData={replaceNodeData} />
-            ) : null}
-          </div>
+        <div
+          style={{
+            width: '360px',
+            background: '#fff',
+            padding: '20px',
+            borderLeft: '1px solid #ccc',
+            overflow: 'auto',
+          }}
+        >
+          {showAdvancedCanvas ? (
+            <Inspector selectedNode={selectedCanvasNode} updateNodeData={updateNodeData} />
+          ) : (
+            renderGuidedEditor()
+          )}
         </div>
       </div>
 
-      <div style={{ height: '40%', width: '100%', background: '#fff', borderTop: '1px solid #e2e8f0' }}>
+      <div style={{ height: '40%', width: '100%', background: '#fff' }}>
         <ChartPanel simulationData={simulationResult} />
       </div>
     </div>
