@@ -224,6 +224,35 @@ function LabeledInput({
   );
 }
 
+function ValidationStatusRow({
+  label,
+  status,
+  tone = 'neutral',
+}: {
+  label: string;
+  status: string;
+  tone?: 'good' | 'warning' | 'neutral';
+}) {
+  const toneColor = tone === 'good' ? '#166534' : tone === 'warning' ? '#9a3412' : '#475569';
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        gap: 12,
+        fontSize: 13,
+        lineHeight: 1.45,
+        padding: '6px 0',
+        borderBottom: '1px solid #fed7aa',
+      }}
+    >
+      <span>{label}</span>
+      <span style={{ fontWeight: 700, color: toneColor, textAlign: 'right' }}>{status}</span>
+    </div>
+  );
+}
+
 function toCanvasNode(node: any): CanvasNode {
   return {
     id: String(node.id),
@@ -353,14 +382,14 @@ export default function App() {
     selectedTopology === 'closed_box'
       ? 'Closed Box is the current stable runnable Studio workflow.'
       : selectedTopology === 'bass_reflex'
-        ? 'Bass Reflex now has a guided editor, but the current Studio → translator → backend line is not yet validated end-to-end for trustworthy plots. Simulation remains disabled in this patch.'
+        ? 'Bass Reflex guided editing is available, but simulation stays disabled because the current translator/backend line is not yet validated as a trustworthy ported-box run path. Missing displacement and group delay do not block the first bass-reflex bring-up; the unresolved port branch and observation path do.'
         : selectedTopology === 'transmission_line'
           ? 'Transmission Line remains upcoming in the current Studio line.'
           : 'Horn remains upcoming in the current Studio line.';
 
   const handleSimulate = useCallback(async () => {
     if (!canRunSimulation) {
-      alert('Only the Closed Box workflow is runnable in the current Studio line. Bass Reflex remains guided-only until end-to-end validation is complete.');
+      alert('Closed Box remains the only runnable workflow in the current Studio line. Bass Reflex stays guided-only until the port branch and observation path are validated end-to-end. Displacement and group delay can land later; they are not the blocker for the first truthful Bass Reflex bring-up.');
       return;
     }
 
@@ -484,18 +513,27 @@ export default function App() {
           }}
         >
           <div style={{ fontWeight: 700, marginBottom: 6 }}>Bass Reflex validation status</div>
-          <div style={{ fontSize: 13, lineHeight: 1.55 }}>
-            Guided editing is available now, but the current Studio translator/backend contract is not yet validated
-            as a trustworthy end-to-end bass-reflex simulation path. In this line the workflow is intentionally
-            editor-first and simulation stays disabled.
+          <div style={{ fontSize: 13, lineHeight: 1.55, marginBottom: 10 }}>
+            Bass Reflex is intentionally still partial in this Studio line. The guided editor and template graph are
+            available, but the runtime stays disabled until the Studio translator/backend path is validated as a
+            trustworthy ported-box simulation path.
+          </div>
+          <ValidationStatusRow label="Guided editor" status="Ready now" tone="good" />
+          <ValidationStatusRow label="Advanced canvas / template view" status="Aligned enough" tone="good" />
+          <ValidationStatusRow label="Port branch translation" status="Not yet validated" tone="warning" />
+          <ValidationStatusRow label="Trustworthy BR SPL / impedance run path" status="Still gated" tone="warning" />
+          <div style={{ fontSize: 12, lineHeight: 1.55, marginTop: 10, color: '#7c2d12' }}>
+            Note: displacement and group delay are still absent from the current payload, but they are not the blocker
+            for the first truthful Bass Reflex workflow. The blocking issue is the unresolved ported-box translation and
+            observation path.
           </div>
         </div>
 
         <div style={{ marginBottom: 16 }}>
           <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>Bass Reflex Editor</div>
           <div style={{ fontSize: 13, color: '#475569', lineHeight: 1.5 }}>
-            Use this panel to set the main ported-box parameters while the runtime path is being validated. This
-            keeps the topology product-visible without implying parity with the stable Closed Box line.
+            Use this panel to set the main ported-box parameters while validation stays explicit. Bass Reflex is now a
+            real guided workflow in the UI, but not yet a claimed end-to-end simulation path.
           </div>
         </div>
 
@@ -645,6 +683,11 @@ export default function App() {
           <button
             onClick={handleSimulate}
             disabled={!canRunSimulation}
+            title={
+              canRunSimulation
+                ? 'Run the current supported topology.'
+                : 'Bass Reflex remains guided-only until the port branch and observation path are validated end-to-end. Closed Box is the only runnable workflow in the current line.'
+            }
             style={{
               padding: '5px 15px',
               cursor: canRunSimulation ? 'pointer' : 'not-allowed',
@@ -673,7 +716,7 @@ export default function App() {
           <TopologyCard
             title="Bass Reflex"
             subtitle="Guided editor with validation gating"
-            status="Partial: simulation disabled"
+            status="Partial: runtime validation pending"
             active={selectedTopology === 'bass_reflex'}
             onClick={() => handleTopologySelect('bass_reflex')}
           />
@@ -723,6 +766,24 @@ export default function App() {
               <div style={{ fontSize: 14, color: '#475569', lineHeight: 1.6, maxWidth: 800 }}>
                 {topologyRuntimeMessage}
               </div>
+              {selectedTopology === 'bass_reflex' ? (
+                <div
+                  style={{
+                    marginTop: 14,
+                    padding: '12px 14px',
+                    borderRadius: 10,
+                    border: '1px solid #fdba74',
+                    background: '#fff7ed',
+                    color: '#9a3412',
+                    maxWidth: 820,
+                    fontSize: 13,
+                    lineHeight: 1.55,
+                  }}
+                >
+                  Bass Reflex remains guided-only in this line. The next truthful enabling step is not extra UI polish;
+                  it is validating the ported-box translator/backend run path so SPL and impedance are trustworthy.
+                </div>
+              ) : null}
               <div
                 style={{
                   marginTop: 18,
@@ -736,7 +797,9 @@ export default function App() {
                 <div style={{ fontWeight: 700, marginBottom: 8 }}>Workflow mode</div>
                 <div style={{ fontSize: 13, color: '#475569', lineHeight: 1.55 }}>
                   Studio now starts topology-first. Guided editing is the primary path. Advanced Canvas remains
-                  available for direct graph inspection and manual node editing when needed.
+                  available for direct graph inspection and manual node editing when needed. Bass Reflex stays visibly
+                  partial until the translator/backend path is validated, rather than being presented as if it already
+                  had Closed Box parity.
                 </div>
                 <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
                   <button
