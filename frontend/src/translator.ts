@@ -156,10 +156,12 @@ function buildBassReflexModel(nodes: CanvasNode[]) {
       radiation_space: '2pi',
       studio_topology: 'bass_reflex',
       studio_br_minimum_runnable_candidate: true,
-      studio_br_runtime_ready: false,
-      studio_br_remaining_blocker: 'validated_br_system_spl_path',
+      studio_br_system_spl_status: 'blocked',
+      studio_br_system_spl_candidate_observations: ['spl_front', 'spl_port'],
+      studio_br_system_spl_blocker:
+        'Current Studio BR emission exposes separate front and port SPL observations, but no validated first-class combined system SPL path.',
       studio_br_validation_note:
-        'Minimum vented-box candidate emitted. The remaining blocker for truthful Studio bass-reflex runtime is a validated system SPL workflow: the current translator emits separate spl_front and spl_port observations, while Studio does not yet expose a validated first-class BR system SPL path. Missing displacement and group delay are not the blocker.',
+        'This translator emits a minimum vented-box candidate structure. Truthful BR runtime still depends on a validated first-class combined system SPL observable path.',
     },
     driver: buildDriver(driverNode),
     elements: [],
