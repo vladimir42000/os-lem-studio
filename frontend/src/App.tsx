@@ -15,6 +15,7 @@ import { buildModelDict } from './translator';
 import type { CanvasEdge, CanvasNode } from './types';
 
 type TopologyId = 'closed_box' | 'bass_reflex' | 'transmission_line' | 'horn';
+type StructuralInsertType = 'volume' | 'duct' | 'radiator';
 
 type TemplateGraph = {
   nodes: ReactFlowNode[];
@@ -298,6 +299,32 @@ function toCanvasEdge(edge: any): CanvasEdge {
   };
 }
 
+function nextGraphObjectId(prefix: string): string {
+  return `${prefix}_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+}
+
+function createStructuralNode(insertType: StructuralInsertType, position: { x: number; y: number }): ReactFlowNode {
+  const baseData =
+    insertType === 'volume'
+      ? { type: 'volume', label: 'Inserted Volume', Vb: 20 }
+      : insertType === 'duct'
+        ? { type: 'duct', label: 'Inserted Duct', areaCm2: 50, lengthCm: 20 }
+        : { type: 'radiator', label: 'Inserted Radiation', model: 'infinite_baffle_piston', Sd: 132 };
+
+  return {
+    id: nextGraphObjectId(`node_${insertType}`),
+    type: 'default',
+    position,
+    data: {
+      ...baseData,
+      __structural: {
+        source: 'manual',
+        operation: 'insert',
+      },
+    },
+  };
+}
+
 const initialSeededClosedBoxGraph = seedTemplateGraph(closedBoxTemplate, 'closed_box');
 
 export default function App() {
@@ -306,9 +333,12 @@ export default function App() {
   const [nodes, setNodes, onNodesChange] = useNodesState(initialSeededClosedBoxGraph.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialSeededClosedBoxGraph.edges);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>('node_driver_1');
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [simulationResult, setSimulationResult] = useState<any>(null);
+  const [graphStructureDirty, setGraphStructureDirty] = useState(false);
+  const [structuralInsertType, setStructuralInsertType] = useState<StructuralInsertType>('duct');
 
-  const canRunSimulation = selectedTopology === 'closed_box';
+  const canRunSimulation = selectedTopology === 'closed_box' && !graphStructureDirty;
 
   const applyTemplate = useCallback(
     (topology: TopologyId) => {
@@ -324,6 +354,8 @@ export default function App() {
       setNodes(graph.nodes);
       setEdges(graph.edges);
       setSelectedNodeId(graph.nodes[0]?.id ?? null);
+      setSelectedEdgeId(null);
+      setGraphStructureDirty(false);
     },
     [setEdges, setNodes],
   );
@@ -349,7 +381,9 @@ export default function App() {
 
   const onSelectionChange = useCallback((params: any) => {
     const selectedNodes = Array.isArray(params?.nodes) ? params.nodes : [];
+    const selectedEdges = Array.isArray(params?.edges) ? params.edges : [];
     setSelectedNodeId(selectedNodes[0]?.id ?? null);
+    setSelectedEdgeId(selectedEdges[0]?.id ?? null);
   }, []);
 
   const updateNodeData = useCallback(
@@ -404,9 +438,33 @@ export default function App() {
     return rfNode ? toCanvasNode(rfNode) : null;
   }, [nodes]);
 
+  const selectedEdge = useMemo<ReactFlowEdge | null>(() => {
+    return edges.find((edge) => edge.id === selectedEdgeId) ?? null;
+  }, [edges, selectedEdgeId]);
+
+  const protectedSeedNodeIds = useMemo(() => {
+    if (selectedTopology === 'closed_box') {
+      return new Set(['node_driver_1', 'node_volume_1', 'node_radiator_1']);
+    }
+    if (selectedTopology === 'bass_reflex') {
+      return new Set(['node_driver_1', 'node_volume_1', 'node_port_1', 'node_radiator_1']);
+    }
+    return new Set(['node_placeholder_1']);
+  }, [selectedTopology]);
+
+  const selectedNodeHasChildren = useMemo(() => {
+    return selectedCanvasNode ? edges.some((edge) => edge.source === selectedCanvasNode.id) : false;
+  }, [edges, selectedCanvasNode]);
+
+  const canDeleteSelectedNode = Boolean(
+    selectedCanvasNode && !protectedSeedNodeIds.has(selectedCanvasNode.id) && !selectedNodeHasChildren,
+  );
+
   const topologyRuntimeMessage =
     selectedTopology === 'closed_box'
-      ? 'Closed Box is the current stable runnable Studio workflow.'
+      ? graphStructureDirty
+        ? 'Closed Box remains the stable seeded runtime anchor. Structural graph edits are now enabled, but edited graphs stay in composition mode until a graph-aware compiler path is added.'
+        : 'Closed Box is the current stable seeded runnable Studio workflow.'
       : selectedTopology === 'bass_reflex'
         ? 'Bass Reflex guided editing is available, but simulation stays disabled because the current translator/backend line is not yet validated as a trustworthy ported-box run path. Missing displacement and group delay do not block the first bass-reflex bring-up; the unresolved port branch and observation path do.'
         : selectedTopology === 'transmission_line'
@@ -415,7 +473,11 @@ export default function App() {
 
   const handleSimulate = useCallback(async () => {
     if (!canRunSimulation) {
-      alert('Closed Box remains the only runnable workflow in the current Studio line. Bass Reflex stays guided-only until the port branch and observation path are validated end-to-end. Displacement and group delay can land later; they are not the blocker for the first truthful Bass Reflex bring-up.');
+      alert(
+        selectedTopology === 'closed_box'
+          ? 'Closed Box remains the runtime anchor only while the seeded graph stays on the supported template path. Structural graph edits are now enabled, but edited graphs remain composition-mode until a graph-aware compiler path exists.'
+          : 'Closed Box remains the only runnable workflow in the current Studio line. Bass Reflex stays guided-only until the port branch and observation path are validated end-to-end. Displacement and group delay can land later; they are not the blocker for the first truthful Bass Reflex bring-up.',
+      );
       return;
     }
 
@@ -441,7 +503,83 @@ export default function App() {
     } catch (_error) {
       alert('Failed to connect to backend.');
     }
-  }, [canRunSimulation, canvasEdges, canvasNodes]);
+  }, [canRunSimulation, canvasEdges, canvasNodes, graphStructureDirty, selectedTopology]);
+
+  const attachElementToSelectedNode = useCallback(() => {
+    if (!selectedCanvasNode) {
+      return;
+    }
+
+    const newNode = createStructuralNode(structuralInsertType, {
+      x: selectedCanvasNode.position.x + 180,
+      y: selectedCanvasNode.position.y + 40,
+    });
+    const newEdge: ReactFlowEdge = {
+      id: nextGraphObjectId('edge'),
+      source: selectedCanvasNode.id,
+      target: newNode.id,
+    };
+
+    setNodes((currentNodes) => [...currentNodes, newNode]);
+    setEdges((currentEdges) => [...currentEdges, newEdge]);
+    setSelectedNodeId(newNode.id);
+    setSelectedEdgeId(newEdge.id);
+    setShowAdvancedCanvas(true);
+    setSimulationResult(null);
+    setGraphStructureDirty(true);
+  }, [selectedCanvasNode, setEdges, setNodes, structuralInsertType]);
+
+  const splitSelectedEdge = useCallback(() => {
+    if (!selectedEdge) {
+      return;
+    }
+
+    const sourceNode = nodes.find((node) => node.id === selectedEdge.source);
+    const targetNode = nodes.find((node) => node.id === selectedEdge.target);
+    const midpoint = {
+      x: ((sourceNode?.position?.x ?? 0) + (targetNode?.position?.x ?? 180)) / 2,
+      y: ((sourceNode?.position?.y ?? 0) + (targetNode?.position?.y ?? 120)) / 2,
+    };
+
+    const insertedNode = createStructuralNode(structuralInsertType, midpoint);
+    const upstreamEdge: ReactFlowEdge = {
+      id: nextGraphObjectId('edge'),
+      source: selectedEdge.source,
+      target: insertedNode.id,
+    };
+    const downstreamEdge: ReactFlowEdge = {
+      id: nextGraphObjectId('edge'),
+      source: insertedNode.id,
+      target: selectedEdge.target,
+    };
+
+    setNodes((currentNodes) => [...currentNodes, insertedNode]);
+    setEdges((currentEdges) => [
+      ...currentEdges.filter((edge) => edge.id !== selectedEdge.id),
+      upstreamEdge,
+      downstreamEdge,
+    ]);
+    setSelectedNodeId(insertedNode.id);
+    setSelectedEdgeId(upstreamEdge.id);
+    setShowAdvancedCanvas(true);
+    setSimulationResult(null);
+    setGraphStructureDirty(true);
+  }, [nodes, selectedEdge, setEdges, setNodes, structuralInsertType]);
+
+  const deleteSelectedLeafNode = useCallback(() => {
+    if (!selectedCanvasNode || !canDeleteSelectedNode) {
+      return;
+    }
+
+    setNodes((currentNodes) => currentNodes.filter((node) => node.id !== selectedCanvasNode.id));
+    setEdges((currentEdges) =>
+      currentEdges.filter((edge) => edge.source !== selectedCanvasNode.id && edge.target !== selectedCanvasNode.id),
+    );
+    setSelectedNodeId(null);
+    setSelectedEdgeId(null);
+    setSimulationResult(null);
+    setGraphStructureDirty(true);
+  }, [canDeleteSelectedNode, selectedCanvasNode, setEdges, setNodes]);
 
   const renderClosedBoxEditor = () => {
     if (!driverNode || !volumeNode || !radiatorNode) {
@@ -656,6 +794,121 @@ export default function App() {
     </div>
   );
 
+  const renderStructuralEditingFoundationPanel = () => (
+    <div
+      style={{
+        padding: '12px 16px',
+        borderBottom: '1px solid #e2e8f0',
+        background: '#ffffff',
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+        <div style={{ maxWidth: 620 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>Structural graph editing foundation</div>
+          <div style={{ fontSize: 13, color: '#475569', lineHeight: 1.55 }}>
+            Templates now seed explicit graph structures. This foundation adds the first bounded structural operations:
+            attach a child element, split a selected path, and delete an inserted leaf. Edited graphs become
+            composition-mode working objects and are intentionally kept outside the current seeded runtime contract.
+          </div>
+        </div>
+        <div style={{ minWidth: 260, fontSize: 13, color: '#334155' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '4px 0' }}>
+            <span>Selected node</span>
+            <strong style={{ textAlign: 'right' }}>
+              {selectedCanvasNode ? selectedCanvasNode.data?.label ?? selectedCanvasNode.id : 'None'}
+            </strong>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '4px 0' }}>
+            <span>Selected path</span>
+            <strong style={{ textAlign: 'right' }}>{selectedEdge ? selectedEdge.id : 'None'}</strong>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '4px 0' }}>
+            <span>Runtime status</span>
+            <strong style={{ color: graphStructureDirty ? '#9a3412' : '#166534', textAlign: 'right' }}>
+              {graphStructureDirty ? 'Composition-only after edits' : 'Seed runtime intact'}
+            </strong>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginTop: 14 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+          <span style={{ fontWeight: 600 }}>Insert element</span>
+          <select
+            value={structuralInsertType}
+            onChange={(event) => setStructuralInsertType(event.target.value as StructuralInsertType)}
+            style={{
+              padding: '7px 10px',
+              borderRadius: 8,
+              border: '1px solid #cbd5e1',
+              background: '#fff',
+            }}
+          >
+            <option value="duct">Duct</option>
+            <option value="volume">Volume</option>
+            <option value="radiator">Radiator</option>
+          </select>
+        </label>
+
+        <button
+          onClick={attachElementToSelectedNode}
+          disabled={!selectedCanvasNode}
+          style={{
+            padding: '8px 12px',
+            borderRadius: 8,
+            border: '1px solid #cbd5e1',
+            background: '#fff',
+            cursor: selectedCanvasNode ? 'pointer' : 'not-allowed',
+            opacity: selectedCanvasNode ? 1 : 0.65,
+          }}
+        >
+          Attach child to selected node
+        </button>
+
+        <button
+          onClick={splitSelectedEdge}
+          disabled={!selectedEdge}
+          style={{
+            padding: '8px 12px',
+            borderRadius: 8,
+            border: '1px solid #cbd5e1',
+            background: '#fff',
+            cursor: selectedEdge ? 'pointer' : 'not-allowed',
+            opacity: selectedEdge ? 1 : 0.65,
+          }}
+        >
+          Split selected path
+        </button>
+
+        <button
+          onClick={deleteSelectedLeafNode}
+          disabled={!canDeleteSelectedNode}
+          title={
+            canDeleteSelectedNode
+              ? 'Delete the selected inserted leaf node.'
+              : 'Deletion is limited to non-protected leaf nodes so seeded validity stays controlled.'
+          }
+          style={{
+            padding: '8px 12px',
+            borderRadius: 8,
+            border: '1px solid #cbd5e1',
+            background: '#fff',
+            cursor: canDeleteSelectedNode ? 'pointer' : 'not-allowed',
+            opacity: canDeleteSelectedNode ? 1 : 0.65,
+          }}
+        >
+          Delete selected leaf
+        </button>
+      </div>
+
+      <div style={{ marginTop: 10, fontSize: 12, color: '#64748b', lineHeight: 1.5 }}>
+        Guardrails: seeded anchor nodes stay protected, deletion is limited to leaf nodes, and structural edits clear
+        the current simulation result. Reconnect-path work is intentionally deferred until graph validity rules and the
+        compilation path are stronger.
+      </div>
+    </div>
+  );
+
   const renderGuidedEditor = () => {
     if (selectedTopology === 'closed_box') {
       return renderClosedBoxEditor();
@@ -711,8 +964,10 @@ export default function App() {
             disabled={!canRunSimulation}
             title={
               canRunSimulation
-                ? 'Run the current supported topology.'
-                : 'Bass Reflex remains guided-only until the port branch and observation path are validated end-to-end. Closed Box is the only runnable workflow in the current line.'
+                ? 'Run the current supported seeded topology.'
+                : selectedTopology === 'closed_box'
+                  ? 'Structural graph edits are now enabled, but edited graphs remain composition-mode until a graph-aware compiler path exists.'
+                  : 'Bass Reflex remains guided-only until the port branch and observation path are validated end-to-end. Closed Box is the only runnable workflow in the current line.'
             }
             style={{
               padding: '5px 15px',
@@ -724,7 +979,7 @@ export default function App() {
               opacity: canRunSimulation ? 1 : 0.85,
             }}
           >
-            {canRunSimulation ? 'Run Simulation' : 'Run Simulation (Closed Box only)'}
+            {canRunSimulation ? 'Run Simulation' : selectedTopology === 'closed_box' ? 'Run Simulation (Seeded Closed Box only)' : 'Run Simulation (Closed Box only)'}
           </button>
         </div>
       </div>
@@ -766,18 +1021,23 @@ export default function App() {
       <div style={{ display: 'flex', height: '60%', borderBottom: '2px solid #ccc' }}>
         <div style={{ flexGrow: 1, background: '#f8fafc', display: 'flex', flexDirection: 'column' }}>
           {showAdvancedCanvas ? (
-            <ReactFlow
-              nodes={nodes}
-              edges={edges}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-              onConnect={onConnect}
-              onSelectionChange={onSelectionChange}
-              fitView
-            >
-              <Background />
-              <Controls />
-            </ReactFlow>
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+              {renderStructuralEditingFoundationPanel()}
+              <div style={{ flexGrow: 1 }}>
+                <ReactFlow
+                  nodes={nodes}
+                  edges={edges}
+                  onNodesChange={onNodesChange}
+                  onEdgesChange={onEdgesChange}
+                  onConnect={onConnect}
+                  onSelectionChange={onSelectionChange}
+                  fitView
+                >
+                  <Background />
+                  <Controls />
+                </ReactFlow>
+              </div>
+            </div>
           ) : (
             <div style={{ padding: '20px 24px', overflow: 'auto' }}>
               <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>
@@ -822,10 +1082,10 @@ export default function App() {
               >
                 <div style={{ fontWeight: 700, marginBottom: 8 }}>Workflow mode</div>
                 <div style={{ fontSize: 13, color: '#475569', lineHeight: 1.55 }}>
-                  Studio now starts topology-first. Guided editing is the primary path. Advanced Canvas remains
-                  available for direct graph inspection and manual node editing when needed. Bass Reflex stays visibly
-                  partial until the translator/backend path is validated, rather than being presented as if it already
-                  had Closed Box parity.
+                  Studio now starts topology-first, but the seeded graph is increasingly the real working object.
+                  Guided editing remains a seed scaffold. Advanced Canvas now supports first bounded structural editing
+                  operations while Bass Reflex stays visibly partial until the translator/backend path is validated,
+                  rather than being presented as if it already had Closed Box parity.
                 </div>
                 <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
                   <button
