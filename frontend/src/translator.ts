@@ -156,12 +156,12 @@ function buildBassReflexModel(nodes: CanvasNode[]) {
       radiation_space: '2pi',
       studio_topology: 'bass_reflex',
       studio_br_minimum_runnable_candidate: true,
-      studio_br_system_spl_status: 'blocked',
-      studio_br_system_spl_candidate_observations: ['spl_front', 'spl_port'],
-      studio_br_system_spl_blocker:
-        'Current Studio BR emission exposes separate front and port SPL observations, but no validated first-class combined system SPL path.',
       studio_br_validation_note:
-        'This translator emits a minimum vented-box candidate structure. Truthful BR runtime still depends on a validated first-class combined system SPL observable path.',
+        'Bass reflex remains gated. The current Studio line emits separate front and port SPL traces plus impedance, but does not yet expose a validated first-class combined system SPL observable.',
+      studio_br_system_spl_status: 'blocked',
+      studio_br_system_spl_blocker:
+        'A truthful BR system SPL path still requires either a kernel-native summed radiation observable or another validated phase-aware system-pressure contract. The current separate spl_front and spl_port traces are not yet sufficient to ungate BR runtime.',
+      studio_br_system_spl_next_patch: 'audit/studio-bass-reflex-kernel-summed-observable-contract',
     },
     driver: buildDriver(driverNode),
     elements: [],
