@@ -143,14 +143,37 @@ const placeholderTemplate = (label: string): TemplateGraph => ({
   edges: [],
 });
 
-function cloneTemplateGraph(template: TemplateGraph): TemplateGraph {
+function seedTemplateGraph(template: TemplateGraph, topology: TopologyId): TemplateGraph {
+  const seedStamp = `${topology}:${Date.now()}`;
+
   return {
-    nodes: template.nodes.map((node) => ({
+    nodes: template.nodes.map((node, index) => ({
       ...node,
       position: { ...node.position },
-      data: { ...node.data },
+      data: {
+        ...node.data,
+        __seed: {
+          topology,
+          source: 'template',
+          stamp: seedStamp,
+          templateNodeId: node.id,
+          seedIndex: index,
+        },
+      },
     })),
-    edges: template.edges.map((edge) => ({ ...edge })),
+    edges: template.edges.map((edge, index) => ({
+      ...edge,
+      data: {
+        ...(edge.data ?? {}),
+        __seed: {
+          topology,
+          source: 'template',
+          stamp: seedStamp,
+          templateEdgeId: edge.id,
+          seedIndex: index,
+        },
+      },
+    })),
   };
 }
 
@@ -275,11 +298,13 @@ function toCanvasEdge(edge: any): CanvasEdge {
   };
 }
 
+const initialSeededClosedBoxGraph = seedTemplateGraph(closedBoxTemplate, 'closed_box');
+
 export default function App() {
   const [selectedTopology, setSelectedTopology] = useState<TopologyId>('closed_box');
-  const [showAdvancedCanvas, setShowAdvancedCanvas] = useState(false);
-  const [nodes, setNodes, onNodesChange] = useNodesState(cloneTemplateGraph(closedBoxTemplate).nodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(cloneTemplateGraph(closedBoxTemplate).edges);
+  const [showAdvancedCanvas, setShowAdvancedCanvas] = useState(true);
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialSeededClosedBoxGraph.nodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initialSeededClosedBoxGraph.edges);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>('node_driver_1');
   const [simulationResult, setSimulationResult] = useState<any>(null);
 
@@ -289,12 +314,12 @@ export default function App() {
     (topology: TopologyId) => {
       const graph =
         topology === 'closed_box'
-          ? cloneTemplateGraph(closedBoxTemplate)
+          ? seedTemplateGraph(closedBoxTemplate, 'closed_box')
           : topology === 'bass_reflex'
-            ? cloneTemplateGraph(bassReflexTemplate)
+            ? seedTemplateGraph(bassReflexTemplate, 'bass_reflex')
             : topology === 'transmission_line'
-              ? cloneTemplateGraph(placeholderTemplate('Transmission Line template preview'))
-              : cloneTemplateGraph(placeholderTemplate('Horn template preview'));
+              ? seedTemplateGraph(placeholderTemplate('Transmission Line template preview'), 'transmission_line')
+              : seedTemplateGraph(placeholderTemplate('Horn template preview'), 'horn');
 
       setNodes(graph.nodes);
       setEdges(graph.edges);
@@ -310,6 +335,7 @@ export default function App() {
         setSimulationResult(null);
       }
       applyTemplate(topology);
+      setShowAdvancedCanvas(true);
     },
     [applyTemplate],
   );
