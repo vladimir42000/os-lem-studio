@@ -1,41 +1,35 @@
 import { useCallback, useMemo, useState } from 'react';
-import type { ReactNode } from 'react';
 import ReactFlow, {
   Background,
-  Connection,
   Controls,
   addEdge,
-  useEdgesState,
-  useNodesState,
+  applyEdgeChanges,
+  applyNodeChanges,
 } from 'reactflow';
-import type { Edge as ReactFlowEdge, Node as ReactFlowNode } from 'reactflow';
+import type {
+  Connection,
+  Edge as ReactFlowEdge,
+  EdgeChange,
+  Node as ReactFlowNode,
+  NodeChange,
+} from 'reactflow';
 import 'reactflow/dist/style.css';
 import Inspector from './Inspector';
 import ChartPanel from './ChartPanel';
 import { buildModelDict } from './translator';
+import { assessGraphCompilability } from './graphCompilability';
 import type { CanvasEdge, CanvasNode } from './types';
 
 type TopologyId = 'closed_box' | 'bass_reflex' | 'transmission_line' | 'horn';
 
-type TemplateGraph = {
-  nodes: ReactFlowNode[];
-  edges: ReactFlowEdge[];
-};
-
 type GraphSnapshot = {
   nodes: ReactFlowNode[];
   edges: ReactFlowEdge[];
-  selectedNodeId: string | null;
-};
-
-type HistoryState = {
-  stack: GraphSnapshot[];
-  index: number;
 };
 
 const HISTORY_LIMIT = 40;
 
-const closedBoxTemplate: TemplateGraph = {
+const closedBoxTemplate: GraphSnapshot = {
   nodes: [
     {
       id: 'node_driver_1',
@@ -82,7 +76,7 @@ const closedBoxTemplate: TemplateGraph = {
   ],
 };
 
-const bassReflexTemplate: TemplateGraph = {
+const bassReflexTemplate: GraphSnapshot = {
   nodes: [
     {
       id: 'node_driver_1',
@@ -141,124 +135,62 @@ const bassReflexTemplate: TemplateGraph = {
   ],
 };
 
-const placeholderTemplate = (label: string): TemplateGraph => ({
-  nodes: [
-    {
-      id: 'node_placeholder_1',
-      type: 'default',
-      position: { x: 320, y: 170 },
-      data: {
-        type: 'volume',
-        label,
-        Vb: 1,
-      },
-    },
-  ],
-  edges: [],
-});
-
-function cloneNodes(nodes: ReactFlowNode[]): ReactFlowNode[] {
-  return nodes.map((node) => ({
-    ...node,
-    position: { ...node.position },
-    data: { ...(node.data ?? {}) },
-  }));
-}
-
-function cloneEdges(edges: ReactFlowEdge[]): ReactFlowEdge[] {
-  return edges.map((edge) => ({
-    ...edge,
-    data: edge.data ? { ...(edge.data as Record<string, unknown>) } : edge.data,
-  }));
-}
-
-function cloneSnapshot(snapshot: GraphSnapshot): GraphSnapshot {
+function placeholderTemplate(label: string): GraphSnapshot {
   return {
-    nodes: cloneNodes(snapshot.nodes),
-    edges: cloneEdges(snapshot.edges),
-    selectedNodeId: snapshot.selectedNodeId,
+    nodes: [
+      {
+        id: 'node_placeholder_1',
+        type: 'default',
+        position: { x: 320, y: 170 },
+        data: {
+          type: 'volume',
+          label,
+          Vb: 1,
+        },
+      },
+    ],
+    edges: [],
   };
 }
 
-function withSeedMetadata(topology: TopologyId, template: TemplateGraph): TemplateGraph {
+function cloneGraphSnapshot(snapshot: GraphSnapshot): GraphSnapshot {
   return {
-    nodes: cloneNodes(template.nodes).map((node) => ({
+    nodes: snapshot.nodes.map((node) => ({
+      ...node,
+      position: { ...node.position },
+      data: { ...(node.data ?? {}) },
+    })),
+    edges: snapshot.edges.map((edge) => ({ ...edge })),
+  };
+}
+
+function seedTemplateGraph(topology: TopologyId): GraphSnapshot {
+  const base =
+    topology === 'closed_box'
+      ? closedBoxTemplate
+      : topology === 'bass_reflex'
+        ? bassReflexTemplate
+        : topology === 'transmission_line'
+          ? placeholderTemplate('Transmission Line seed')
+          : placeholderTemplate('Horn seed');
+
+  const seeded = cloneGraphSnapshot(base);
+  return {
+    nodes: seeded.nodes.map((node) => ({
       ...node,
       data: {
         ...(node.data ?? {}),
         _seedTopology: topology,
-        _seedAnchor: true,
       },
     })),
-    edges: cloneEdges(template.edges).map((edge) => ({
+    edges: seeded.edges.map((edge) => ({
       ...edge,
       data: {
-        ...(edge.data as Record<string, unknown> | undefined),
+        ...(edge.data ?? {}),
         _seedTopology: topology,
       },
     })),
   };
-}
-
-function getTemplateGraph(topology: TopologyId): TemplateGraph {
-  if (topology === 'closed_box') {
-    return withSeedMetadata('closed_box', closedBoxTemplate);
-  }
-  if (topology === 'bass_reflex') {
-    return withSeedMetadata('bass_reflex', bassReflexTemplate);
-  }
-  if (topology === 'transmission_line') {
-    return withSeedMetadata('transmission_line', placeholderTemplate('Transmission Line seed preview'));
-  }
-  return withSeedMetadata('horn', placeholderTemplate('Horn seed preview'));
-}
-
-function seedTemplateGraph(topology: TopologyId): GraphSnapshot {
-  const graph = getTemplateGraph(topology);
-  return {
-    nodes: graph.nodes,
-    edges: graph.edges,
-    selectedNodeId: graph.nodes[0]?.id ?? null,
-  };
-}
-
-function parsePositiveNumber(raw: string, fallback: number): number {
-  const value = Number(raw);
-  return Number.isFinite(value) && value > 0 ? value : fallback;
-}
-
-function graphStructureSignature(nodes: ReactFlowNode[], edges: ReactFlowEdge[]): string {
-  const nodeSignature = nodes
-    .map((node) => `${String(node.id)}:${String(node.data?.type ?? node.type ?? 'default')}`)
-    .sort()
-    .join('|');
-  const edgeSignature = edges
-    .map((edge) => `${String(edge.source)}->${String(edge.target)}`)
-    .sort()
-    .join('|');
-  return `${nodeSignature}__${edgeSignature}`;
-}
-
-function nextNodeId(prefix: string, nodes: ReactFlowNode[]): string {
-  let index = nodes.length + 1;
-  let candidate = `${prefix}_${index}`;
-  const existing = new Set(nodes.map((node) => String(node.id)));
-  while (existing.has(candidate)) {
-    index += 1;
-    candidate = `${prefix}_${index}`;
-  }
-  return candidate;
-}
-
-function nextEdgeId(edges: ReactFlowEdge[]): string {
-  let index = edges.length + 1;
-  let candidate = `edge-${index}`;
-  const existing = new Set(edges.map((edge) => String(edge.id)));
-  while (existing.has(candidate)) {
-    index += 1;
-    candidate = `edge-${index}`;
-  }
-  return candidate;
 }
 
 function toCanvasNode(node: ReactFlowNode): CanvasNode {
@@ -281,6 +213,11 @@ function toCanvasEdge(edge: ReactFlowEdge): CanvasEdge {
     target: String(edge.target),
     targetHandle: edge.targetHandle ?? null,
   };
+}
+
+function parsePositiveNumber(raw: string, fallback: number): number {
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
 function TopologyCard({
@@ -348,198 +285,302 @@ function LabeledInput({
   );
 }
 
-function SectionCard({ title, children }: { title: string; children: ReactNode }) {
+function StatusBadge({ text, tone }: { text: string; tone: 'good' | 'warning' | 'bad' | 'neutral' }) {
+  const colors =
+    tone === 'good'
+      ? { bg: '#dcfce7', fg: '#166534' }
+      : tone === 'warning'
+        ? { bg: '#ffedd5', fg: '#9a3412' }
+        : tone === 'bad'
+          ? { bg: '#fee2e2', fg: '#991b1b' }
+          : { bg: '#e2e8f0', fg: '#334155' };
+
   return (
-    <div
+    <span
       style={{
-        background: '#ffffff',
-        border: '1px solid #dbe3ef',
-        borderRadius: 12,
-        padding: 16,
+        display: 'inline-block',
+        padding: '3px 8px',
+        borderRadius: 999,
+        fontSize: 12,
+        fontWeight: 700,
+        background: colors.bg,
+        color: colors.fg,
       }}
     >
-      <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 12 }}>{title}</div>
-      {children}
-    </div>
+      {text}
+    </span>
   );
 }
 
-function RuntimeStatusRow({
-  label,
-  value,
-  tone = 'neutral',
-}: {
-  label: string;
-  value: string;
-  tone?: 'good' | 'warning' | 'neutral';
-}) {
-  const color = tone === 'good' ? '#166534' : tone === 'warning' ? '#9a3412' : '#475569';
-  return (
-    <div
-      style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        gap: 12,
-        fontSize: 13,
-        lineHeight: 1.45,
-        padding: '6px 0',
-        borderBottom: '1px solid #e2e8f0',
-      }}
-    >
-      <span>{label}</span>
-      <span style={{ fontWeight: 700, color, textAlign: 'right' }}>{value}</span>
-    </div>
-  );
+function nextNodeId(nodes: ReactFlowNode[], prefix: string): string {
+  let index = 1;
+  const existing = new Set(nodes.map((node) => node.id));
+  while (existing.has(`${prefix}_${index}`)) {
+    index += 1;
+  }
+  return `${prefix}_${index}`;
 }
 
 export default function App() {
-  const initialSeed = useMemo(() => cloneSnapshot(seedTemplateGraph('closed_box')), []);
-
+  const initialSeed = useMemo(() => seedTemplateGraph('closed_box'), []);
   const [selectedTopology, setSelectedTopology] = useState<TopologyId>('closed_box');
-  const [showAdvancedCanvas, setShowAdvancedCanvas] = useState(true);
-  const [seedGraph, setSeedGraph] = useState<GraphSnapshot>(initialSeed);
-  const [historyState, setHistoryState] = useState<HistoryState>({
-    stack: [cloneSnapshot(initialSeed)],
-    index: 0,
-  });
-  const [nodes, setNodes, onNodesChange] = useNodesState(cloneNodes(initialSeed.nodes));
-  const [edges, setEdges, onEdgesChange] = useEdgesState(cloneEdges(initialSeed.edges));
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(initialSeed.selectedNodeId);
+  const [seedGraph, setSeedGraph] = useState<GraphSnapshot>(cloneGraphSnapshot(initialSeed));
+  const [nodes, setNodes] = useState<ReactFlowNode[]>(cloneGraphSnapshot(initialSeed).nodes);
+  const [edges, setEdges] = useState<ReactFlowEdge[]>(cloneGraphSnapshot(initialSeed).edges);
+  const [history, setHistory] = useState<GraphSnapshot[]>([cloneGraphSnapshot(initialSeed)]);
+  const [historyIndex, setHistoryIndex] = useState(0);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>('node_driver_1');
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [simulationResult, setSimulationResult] = useState<any>(null);
 
-  const applySnapshotWithoutHistory = useCallback(
-    (snapshot: GraphSnapshot) => {
-      const snapshotClone = cloneSnapshot(snapshot);
-      setNodes(snapshotClone.nodes);
-      setEdges(snapshotClone.edges);
-      setSelectedNodeId(snapshotClone.selectedNodeId);
+  const canvasNodes = useMemo(() => nodes.map(toCanvasNode), [nodes]);
+  const canvasEdges = useMemo(() => edges.map(toCanvasEdge), [edges]);
+  const seedCanvasGraph = useMemo(
+    () => ({
+      nodes: seedGraph.nodes.map(toCanvasNode),
+      edges: seedGraph.edges.map(toCanvasEdge),
+    }),
+    [seedGraph],
+  );
+
+  const graphAssessment = useMemo(
+    () =>
+      assessGraphCompilability({
+        topology: selectedTopology,
+        nodes: canvasNodes,
+        edges: canvasEdges,
+        seedGraph: seedCanvasGraph,
+      }),
+    [selectedTopology, canvasNodes, canvasEdges, seedCanvasGraph],
+  );
+
+  const canRunSimulation = graphAssessment.status === 'compilable_anchor';
+  const canUndo = historyIndex > 0;
+  const canRedo = historyIndex < history.length - 1;
+
+  const setWorkingGraphFromSnapshot = useCallback((snapshot: GraphSnapshot) => {
+    const cloned = cloneGraphSnapshot(snapshot);
+    setNodes(cloned.nodes);
+    setEdges(cloned.edges);
+    setSelectedNodeId(cloned.nodes[0]?.id ?? null);
+    setSelectedEdgeId(null);
+  }, []);
+
+
+
+  const commitGraphSnapshot = useCallback(
+    (snapshot: GraphSnapshot, options?: { recordHistory?: boolean; clearSimulation?: boolean }) => {
+      const cloned = cloneGraphSnapshot(snapshot);
+      setNodes(cloned.nodes);
+      setEdges(cloned.edges);
+      setSelectedNodeId(cloned.nodes[0]?.id ?? null);
+      setSelectedEdgeId(null);
+      if (options?.clearSimulation ?? true) {
+        setSimulationResult(null);
+      }
+      if (options?.recordHistory ?? true) {
+        setHistory((currentHistory) => {
+          const truncated = currentHistory.slice(0, historyIndex + 1);
+          const next = [...truncated, cloneGraphSnapshot(cloned)];
+          if (next.length > HISTORY_LIMIT) {
+            return next.slice(next.length - HISTORY_LIMIT);
+          }
+          return next;
+        });
+        setHistoryIndex(() => {
+          const nextLength = Math.min(historyIndex + 2, HISTORY_LIMIT);
+          return nextLength - 1;
+        });
+      }
+    },
+    [historyIndex],
+  );
+
+  const resetToTopologySeed = useCallback(
+    (topology: TopologyId) => {
+      const seeded = seedTemplateGraph(topology);
+      setSelectedTopology(topology);
+      setSeedGraph(cloneGraphSnapshot(seeded));
+      setWorkingGraphFromSnapshot(seeded);
+      setHistory([cloneGraphSnapshot(seeded)]);
+      setHistoryIndex(0);
       setSimulationResult(null);
     },
-    [setEdges, setNodes],
+    [setWorkingGraphFromSnapshot],
   );
 
-  const commitGraphChange = useCallback(
-    (nextNodes: ReactFlowNode[], nextEdges: ReactFlowEdge[], nextSelectedNodeId?: string | null) => {
-      const snapshot: GraphSnapshot = {
-        nodes: cloneNodes(nextNodes),
-        edges: cloneEdges(nextEdges),
-        selectedNodeId: nextSelectedNodeId ?? selectedNodeId ?? nextNodes[0]?.id ?? null,
-      };
+  const onNodesChange = useCallback((changes: NodeChange[]) => {
+    setNodes((currentNodes) => applyNodeChanges(changes, currentNodes));
+  }, []);
 
-      applySnapshotWithoutHistory(snapshot);
-      setHistoryState((previous) => {
-        const base = previous.stack.slice(0, previous.index + 1);
-        const appended = [...base, cloneSnapshot(snapshot)];
-        const trimmed = appended.length > HISTORY_LIMIT ? appended.slice(appended.length - HISTORY_LIMIT) : appended;
-        return { stack: trimmed, index: trimmed.length - 1 };
-      });
-    },
-    [applySnapshotWithoutHistory, selectedNodeId],
-  );
-
-  const reseedTopology = useCallback(
-    (topology: TopologyId) => {
-      const seeded = cloneSnapshot(seedTemplateGraph(topology));
-      setSelectedTopology(topology);
-      setSeedGraph(cloneSnapshot(seeded));
-      setHistoryState({ stack: [cloneSnapshot(seeded)], index: 0 });
-      applySnapshotWithoutHistory(seeded);
-      setShowAdvancedCanvas(true);
-    },
-    [applySnapshotWithoutHistory],
-  );
+  const onEdgesChange = useCallback((changes: EdgeChange[]) => {
+    setEdges((currentEdges) => applyEdgeChanges(changes, currentEdges));
+  }, []);
 
   const onConnect = useCallback(
     (params: Connection) => {
       const nextEdges = addEdge(params, edges);
-      commitGraphChange(nodes, nextEdges, selectedNodeId);
+      commitGraphSnapshot({ nodes, edges: nextEdges });
     },
-    [commitGraphChange, edges, nodes, selectedNodeId],
+    [commitGraphSnapshot, edges, nodes],
   );
 
-  const onSelectionChange = useCallback((params: { nodes?: ReactFlowNode[] }) => {
+  const onSelectionChange = useCallback((params: { nodes?: ReactFlowNode[]; edges?: ReactFlowEdge[] }) => {
     const selectedNodes = Array.isArray(params?.nodes) ? params.nodes : [];
+    const selectedEdges = Array.isArray(params?.edges) ? params.edges : [];
     setSelectedNodeId(selectedNodes[0]?.id ?? null);
+    setSelectedEdgeId(selectedEdges[0]?.id ?? null);
   }, []);
+
+  const handleUndo = useCallback(() => {
+    if (!canUndo) return;
+    const nextIndex = historyIndex - 1;
+    const snapshot = history[nextIndex];
+    if (!snapshot) return;
+    setHistoryIndex(nextIndex);
+    setWorkingGraphFromSnapshot(snapshot);
+    setSimulationResult(null);
+  }, [canUndo, history, historyIndex, setWorkingGraphFromSnapshot]);
+
+  const handleRedo = useCallback(() => {
+    if (!canRedo) return;
+    const nextIndex = historyIndex + 1;
+    const snapshot = history[nextIndex];
+    if (!snapshot) return;
+    setHistoryIndex(nextIndex);
+    setWorkingGraphFromSnapshot(snapshot);
+    setSimulationResult(null);
+  }, [canRedo, history, historyIndex, setWorkingGraphFromSnapshot]);
+
+  const handleResetToSeed = useCallback(() => {
+    commitGraphSnapshot(seedGraph, { recordHistory: true, clearSimulation: true });
+  }, [commitGraphSnapshot, seedGraph]);
 
   const updateNodeData = useCallback(
     (id: string, newData: any) => {
-      const nextNodes = nodes.map((node) => (node.id === id ? { ...node, data: newData } : node));
-      commitGraphChange(nextNodes, edges, id);
+      setNodes((currentNodes) =>
+        currentNodes.map((node) => (node.id === id ? { ...node, data: newData } : node)),
+      );
+      setSimulationResult(null);
     },
-    [commitGraphChange, edges, nodes],
+    [],
   );
 
   const patchNodeData = useCallback(
     (id: string, patch: Record<string, unknown>) => {
-      const nextNodes = nodes.map((node) =>
-        node.id === id ? { ...node, data: { ...(node.data ?? {}), ...patch } } : node,
+      setNodes((currentNodes) =>
+        currentNodes.map((node) =>
+          node.id === id ? { ...node, data: { ...(node.data ?? {}), ...patch } } : node,
+        ),
       );
-      commitGraphChange(nextNodes, edges, id);
+      setSimulationResult(null);
     },
-    [commitGraphChange, edges, nodes],
+    [],
   );
 
-  const canvasNodes = useMemo(() => nodes.map(toCanvasNode), [nodes]);
-  const canvasEdges = useMemo(() => edges.map(toCanvasEdge), [edges]);
+  const attachChildToSelectedNode = useCallback(() => {
+    if (!selectedNodeId) return;
+    const selectedNode = nodes.find((node) => node.id === selectedNodeId);
+    if (!selectedNode) return;
 
-  const selectedCanvasNode = useMemo<CanvasNode | null>(() => {
-    const rfNode = nodes.find((node) => node.id === selectedNodeId);
-    return rfNode ? toCanvasNode(rfNode) : null;
-  }, [nodes, selectedNodeId]);
+    const childId = nextNodeId(nodes, 'node_branch_volume');
+    const nextNodes = [
+      ...nodes,
+      {
+        id: childId,
+        type: 'default',
+        position: {
+          x: Number(selectedNode.position.x) + 200,
+          y: Number(selectedNode.position.y) + 110,
+        },
+        data: {
+          type: 'volume',
+          label: 'Branch Volume',
+          Vb: 8,
+        },
+      } as ReactFlowNode,
+    ];
 
-  const driverNode = useMemo<CanvasNode | null>(() => {
-    const rfNode = nodes.find((node) => node.id === 'node_driver_1');
-    return rfNode ? toCanvasNode(rfNode) : null;
-  }, [nodes]);
+    const nextEdges = [
+      ...edges,
+      {
+        id: nextNodeId(nodes, 'edge_branch'),
+        source: selectedNode.id,
+        target: childId,
+      } as ReactFlowEdge,
+    ];
 
-  const volumeNode = useMemo<CanvasNode | null>(() => {
-    const rfNode = nodes.find((node) => node.id === 'node_volume_1');
-    return rfNode ? toCanvasNode(rfNode) : null;
-  }, [nodes]);
+    commitGraphSnapshot({ nodes: nextNodes, edges: nextEdges });
+  }, [commitGraphSnapshot, edges, nodes, selectedNodeId]);
 
-  const radiatorNode = useMemo<CanvasNode | null>(() => {
-    const rfNode = nodes.find((node) => node.id === 'node_radiator_1');
-    return rfNode ? toCanvasNode(rfNode) : null;
-  }, [nodes]);
+  const splitSelectedPath = useCallback(() => {
+    if (!selectedEdgeId) return;
+    const targetEdge = edges.find((edge) => edge.id === selectedEdgeId);
+    if (!targetEdge) return;
 
-  const portNode = useMemo<CanvasNode | null>(() => {
-    const rfNode = nodes.find((node) => node.id === 'node_port_1');
-    return rfNode ? toCanvasNode(rfNode) : null;
-  }, [nodes]);
+    const splitNodeId = nextNodeId(nodes, 'node_split_duct');
+    const nextNodes = [
+      ...nodes,
+      {
+        id: splitNodeId,
+        type: 'default',
+        position: {
+          x: 0.5 * (
+            Number(nodes.find((node) => node.id === targetEdge.source)?.position.x ?? 0) +
+            Number(nodes.find((node) => node.id === targetEdge.target)?.position.x ?? 0)
+          ),
+          y: 0.5 * (
+            Number(nodes.find((node) => node.id === targetEdge.source)?.position.y ?? 0) +
+            Number(nodes.find((node) => node.id === targetEdge.target)?.position.y ?? 0)
+          ),
+        },
+        data: {
+          type: 'duct',
+          label: 'Inserted Duct',
+          areaCm2: 40,
+          lengthCm: 12,
+        },
+      } as ReactFlowNode,
+    ];
 
-  const seedStructureSignature = useMemo(
-    () => graphStructureSignature(seedGraph.nodes, seedGraph.edges),
-    [seedGraph.edges, seedGraph.nodes],
-  );
-  const workingStructureSignature = useMemo(
-    () => graphStructureSignature(nodes, edges),
-    [edges, nodes],
-  );
-  const isCompositionMode = workingStructureSignature !== seedStructureSignature;
-  const canUndo = historyState.index > 0;
-  const canRedo = historyState.index < historyState.stack.length - 1;
-  const canRunSimulation = selectedTopology === 'closed_box' && !isCompositionMode;
+    const nextEdges = edges
+      .filter((edge) => edge.id !== targetEdge.id)
+      .concat([
+        {
+          id: `${targetEdge.id}_a`,
+          source: targetEdge.source,
+          target: splitNodeId,
+        } as ReactFlowEdge,
+        {
+          id: `${targetEdge.id}_b`,
+          source: splitNodeId,
+          target: targetEdge.target,
+        } as ReactFlowEdge,
+      ]);
 
-  const runtimeReason = useMemo(() => {
-    if (selectedTopology === 'closed_box' && !isCompositionMode) {
-      return 'Validated seeded Closed Box anchor';
+    commitGraphSnapshot({ nodes: nextNodes, edges: nextEdges });
+  }, [commitGraphSnapshot, edges, nodes, selectedEdgeId]);
+
+  const deleteSelectedLeaf = useCallback(() => {
+    if (!selectedNodeId) return;
+    const selectedNode = nodes.find((node) => node.id === selectedNodeId);
+    if (!selectedNode) return;
+
+    const protectedIds = new Set(seedGraph.nodes.map((node) => node.id));
+    const hasOutgoingEdge = edges.some((edge) => edge.source === selectedNode.id);
+    if (protectedIds.has(selectedNode.id) || hasOutgoingEdge) {
+      return;
     }
-    if (selectedTopology === 'closed_box' && isCompositionMode) {
-      return 'Composition mode — structural edits moved beyond the validated seeded anchor';
-    }
-    if (selectedTopology === 'bass_reflex') {
-      return 'Bass Reflex remains gated until a validated first-class combined system SPL path exists';
-    }
-    if (selectedTopology === 'transmission_line') {
-      return 'Transmission Line is still a seed preview only in this line';
-    }
-    return 'Horn is still a seed preview only in this line';
-  }, [isCompositionMode, selectedTopology]);
+
+    const nextNodes = nodes.filter((node) => node.id !== selectedNode.id);
+    const nextEdges = edges.filter((edge) => edge.source !== selectedNode.id && edge.target !== selectedNode.id);
+
+    commitGraphSnapshot({ nodes: nextNodes, edges: nextEdges });
+  }, [commitGraphSnapshot, edges, nodes, seedGraph.nodes, selectedNodeId]);
 
   const handleSimulate = useCallback(async () => {
     if (!canRunSimulation) {
-      window.alert(runtimeReason);
+      alert(graphAssessment.reasons[0] ?? 'This graph is not on a validated runnable path in the current line.');
       return;
     }
 
@@ -560,206 +601,135 @@ export default function App() {
       if (data.status === 'success') {
         setSimulationResult(data.data);
       } else {
-        window.alert(`Solver Error: ${JSON.stringify(data)}`);
+        alert(`Solver Error: ${JSON.stringify(data)}`);
       }
     } catch (_error) {
-      window.alert('Failed to connect to backend.');
+      alert('Failed to connect to backend.');
     }
-  }, [canRunSimulation, canvasEdges, canvasNodes, runtimeReason]);
+  }, [canRunSimulation, canvasEdges, canvasNodes, graphAssessment.reasons]);
 
-  const handleUndo = useCallback(() => {
-    if (!canUndo) {
-      return;
-    }
-    const nextIndex = historyState.index - 1;
-    const snapshot = historyState.stack[nextIndex];
-    setHistoryState({ ...historyState, index: nextIndex });
-    applySnapshotWithoutHistory(snapshot);
-  }, [applySnapshotWithoutHistory, canUndo, historyState]);
-
-  const handleRedo = useCallback(() => {
-    if (!canRedo) {
-      return;
-    }
-    const nextIndex = historyState.index + 1;
-    const snapshot = historyState.stack[nextIndex];
-    setHistoryState({ ...historyState, index: nextIndex });
-    applySnapshotWithoutHistory(snapshot);
-  }, [applySnapshotWithoutHistory, canRedo, historyState]);
-
-  const handleResetToSeed = useCallback(() => {
-    commitGraphChange(seedGraph.nodes, seedGraph.edges, seedGraph.selectedNodeId);
-  }, [commitGraphChange, seedGraph.edges, seedGraph.nodes, seedGraph.selectedNodeId]);
-
-  const handleInsertChild = useCallback(() => {
-    const parent = nodes.find((node) => node.id === selectedNodeId) ?? nodes[0];
-    if (!parent) {
-      return;
-    }
-
-    const childId = nextNodeId('node_inserted', nodes);
-    const childNode: ReactFlowNode = {
-      id: childId,
-      type: 'default',
-      position: { x: parent.position.x + 220, y: parent.position.y + 80 },
-      data: {
-        type: 'volume',
-        label: 'Inserted Volume',
-        Vb: 10,
-        _seedAnchor: false,
-        _seedTopology: selectedTopology,
-      },
-    };
-    const childEdge: ReactFlowEdge = {
-      id: nextEdgeId(edges),
-      source: String(parent.id),
-      target: childId,
-    };
-
-    commitGraphChange([...nodes, childNode], [...edges, childEdge], childId);
-  }, [commitGraphChange, edges, nodes, selectedNodeId, selectedTopology]);
-
-  const handleSplitSelectedPath = useCallback(() => {
-    const target = nodes.find((node) => node.id === selectedNodeId);
-    if (!target) {
-      window.alert('Select a node whose incoming path should be split.');
-      return;
-    }
-
-    const incomingEdge = edges.find((edge) => edge.target === target.id);
-    if (!incomingEdge) {
-      window.alert('The selected node has no incoming path to split.');
-      return;
-    }
-
-    const splitNodeId = nextNodeId('node_split', nodes);
-    const splitNode: ReactFlowNode = {
-      id: splitNodeId,
-      type: 'default',
-      position: {
-        x: ((nodes.find((node) => node.id === incomingEdge.source)?.position.x ?? 0) + target.position.x) / 2,
-        y: ((nodes.find((node) => node.id === incomingEdge.source)?.position.y ?? 0) + target.position.y) / 2,
-      },
-      data: {
-        type: 'duct',
-        label: 'Inserted Split Path',
-        areaCm2: 80,
-        lengthCm: 15,
-        _seedAnchor: false,
-        _seedTopology: selectedTopology,
-      },
-    };
-
-    const nextEdges = edges
-      .filter((edge) => edge.id !== incomingEdge.id)
-      .concat([
-        { id: nextEdgeId(edges), source: incomingEdge.source, target: splitNodeId },
-        { id: `edge-${String(edges.length + 2)}`, source: splitNodeId, target: String(target.id) },
-      ]);
-
-    commitGraphChange([...nodes, splitNode], nextEdges, splitNodeId);
-  }, [commitGraphChange, edges, nodes, selectedNodeId, selectedTopology]);
-
-  const handleDeleteSelectedLeaf = useCallback(() => {
+  const selectedCanvasNode = useMemo<CanvasNode | null>(() => {
     const selected = nodes.find((node) => node.id === selectedNodeId);
-    if (!selected) {
-      return;
-    }
-    if (selected.data?._seedAnchor) {
-      window.alert('Seed anchor nodes are protected. Reset to Seed if you want the original topology back.');
-      return;
-    }
+    return selected ? toCanvasNode(selected) : null;
+  }, [nodes, selectedNodeId]);
 
-    const outgoingEdges = edges.filter((edge) => edge.source === selected.id);
-    if (outgoingEdges.length > 0) {
-      window.alert('Only leaf nodes can be deleted in this bounded editing foundation.');
-      return;
-    }
+  const driverNode = useMemo(() => nodes.find((node) => node.data?.type === 'driver') ?? null, [nodes]);
+  const volumeNode = useMemo(() => nodes.find((node) => node.id === 'node_volume_1') ?? null, [nodes]);
+  const radiatorNode = useMemo(() => nodes.find((node) => node.id === 'node_radiator_1') ?? null, [nodes]);
+  const portNode = useMemo(() => nodes.find((node) => node.id === 'node_port_1') ?? null, [nodes]);
 
-    const incomingEdge = edges.find((edge) => edge.target === selected.id) ?? null;
-    const nextNodes = nodes.filter((node) => node.id !== selected.id);
-    const nextEdges = edges.filter((edge) => edge.source !== selected.id && edge.target !== selected.id);
-    const fallbackSelection = incomingEdge?.source ? String(incomingEdge.source) : nextNodes[0]?.id ?? null;
-    commitGraphChange(nextNodes, nextEdges, fallbackSelection);
-  }, [commitGraphChange, edges, nodes, selectedNodeId]);
+  const statusTone =
+    graphAssessment.status === 'compilable_anchor'
+      ? 'good'
+      : graphAssessment.status === 'invalid_graph'
+        ? 'bad'
+        : 'warning';
 
   const renderClosedBoxEditor = () => {
     if (!driverNode || !volumeNode || !radiatorNode) {
-      return <div style={{ color: '#991b1b', lineHeight: 1.5 }}>The current closed-box seed is incomplete.</div>;
+      return <div style={{ color: '#991b1b' }}>Closed Box seed motif is incomplete.</div>;
     }
 
     return (
       <>
-        <div style={{ fontSize: 13, color: '#475569', lineHeight: 1.5, marginBottom: 14 }}>
-          Closed Box remains the validated seeded runtime anchor. Parameter edits stay on the working graph while
-          structural edits move the graph into composition mode.
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>Closed Box Seed Editor</div>
+          <div style={{ fontSize: 13, color: '#475569', lineHeight: 1.5 }}>
+            This guided panel edits the current working graph while Closed Box remains the validated runnable anchor.
+          </div>
         </div>
-        <LabeledInput
-          label="Driver Re"
-          value={driverNode.data.Re ?? 5.0}
-          suffix="ohm"
-          onChange={(value) => patchNodeData(driverNode.id, { Re: parsePositiveNumber(value, 5.0) })}
-        />
-        <LabeledInput
-          label="Driver Le"
-          value={driverNode.data.Le ?? 1.4}
-          suffix="mH"
-          onChange={(value) => patchNodeData(driverNode.id, { Le: parsePositiveNumber(value, 1.4) })}
-        />
-        <LabeledInput
-          label="Driver Sd"
-          value={driverNode.data.Sd ?? 531}
-          suffix="cm²"
-          onChange={(value) => patchNodeData(driverNode.id, { Sd: parsePositiveNumber(value, 531) })}
-        />
-        <LabeledInput
-          label="Rear Chamber Volume"
-          value={volumeNode.data.Vb ?? 50}
-          suffix="liters"
-          onChange={(value) => patchNodeData(volumeNode.id, { Vb: parsePositiveNumber(value, 50) })}
-        />
-        <LabeledInput
-          label="Front Radiation Area"
-          value={radiatorNode.data.Sd ?? 531}
-          suffix="cm²"
-          onChange={(value) => patchNodeData(radiatorNode.id, { Sd: parsePositiveNumber(value, 531) })}
-        />
+
+        <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 16 }}>
+          <div style={{ fontWeight: 700, marginBottom: 12 }}>Driver</div>
+          <LabeledInput
+            label="Label"
+            value={String(driverNode.data?.label ?? '')}
+            onChange={(value) => patchNodeData(driverNode.id, { label: value || 'Driver' })}
+          />
+          <LabeledInput
+            label="Re"
+            value={Number(driverNode.data?.Re ?? 5.0)}
+            suffix="ohm"
+            onChange={(value) => patchNodeData(driverNode.id, { Re: parsePositiveNumber(value, 5.0) })}
+          />
+          <LabeledInput
+            label="Le"
+            value={Number(driverNode.data?.Le ?? 1.4)}
+            suffix="mH"
+            onChange={(value) => patchNodeData(driverNode.id, { Le: parsePositiveNumber(value, 1.4) })}
+          />
+          <LabeledInput
+            label="Sd"
+            value={Number(driverNode.data?.Sd ?? 531)}
+            suffix="cm²"
+            onChange={(value) => patchNodeData(driverNode.id, { Sd: parsePositiveNumber(value, 531) })}
+          />
+        </div>
+
+        <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 16, marginTop: 16 }}>
+          <div style={{ fontWeight: 700, marginBottom: 12 }}>Rear Chamber</div>
+          <LabeledInput
+            label="Volume"
+            value={Number(volumeNode.data?.Vb ?? 50)}
+            suffix="liters"
+            onChange={(value) => patchNodeData(volumeNode.id, { Vb: parsePositiveNumber(value, 50) })}
+          />
+        </div>
+
+        <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 16, marginTop: 16 }}>
+          <div style={{ fontWeight: 700, marginBottom: 12 }}>Front Radiation</div>
+          <LabeledInput
+            label="Label"
+            value={String(radiatorNode.data?.label ?? '')}
+            onChange={(value) => patchNodeData(radiatorNode.id, { label: value || 'Front Radiation' })}
+          />
+          <LabeledInput
+            label="Radiating Area"
+            value={Number(radiatorNode.data?.Sd ?? 531)}
+            suffix="cm²"
+            onChange={(value) => patchNodeData(radiatorNode.id, { Sd: parsePositiveNumber(value, 531) })}
+          />
+        </div>
       </>
     );
   };
 
   const renderBassReflexEditor = () => {
     if (!driverNode || !volumeNode || !radiatorNode || !portNode) {
-      return <div style={{ color: '#991b1b', lineHeight: 1.5 }}>The current Bass Reflex seed is incomplete.</div>;
+      return <div style={{ color: '#991b1b' }}>Bass Reflex seed motif is incomplete.</div>;
     }
 
     return (
       <>
-        <div style={{ fontSize: 13, color: '#475569', lineHeight: 1.5, marginBottom: 14 }}>
-          Bass Reflex is a truthful seeded graph path, but runtime remains gated until a validated first-class combined
-          system SPL path exists.
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>Bass Reflex Seed Editor</div>
+          <div style={{ fontSize: 13, color: '#475569', lineHeight: 1.5 }}>
+            Bass Reflex is a seeded graph path in this line. The graph is editable, but runtime remains gated until a
+            truthful graph-to-kernel path is validated.
+          </div>
         </div>
+
         <LabeledInput
           label="Rear Chamber Volume"
-          value={volumeNode.data.Vb ?? 65}
+          value={Number(volumeNode.data?.Vb ?? 65)}
           suffix="liters"
           onChange={(value) => patchNodeData(volumeNode.id, { Vb: parsePositiveNumber(value, 65) })}
         />
         <LabeledInput
           label="Port Area"
-          value={portNode.data.areaCm2 ?? 120}
+          value={Number(portNode.data?.areaCm2 ?? 120)}
           suffix="cm²"
           onChange={(value) => patchNodeData(portNode.id, { areaCm2: parsePositiveNumber(value, 120) })}
         />
         <LabeledInput
           label="Port Length"
-          value={portNode.data.lengthCm ?? 20}
+          value={Number(portNode.data?.lengthCm ?? 20)}
           suffix="cm"
           onChange={(value) => patchNodeData(portNode.id, { lengthCm: parsePositiveNumber(value, 20) })}
         />
         <LabeledInput
           label="Front Radiation Area"
-          value={radiatorNode.data.Sd ?? 531}
+          value={Number(radiatorNode.data?.Sd ?? 531)}
           suffix="cm²"
           onChange={(value) => patchNodeData(radiatorNode.id, { Sd: parsePositiveNumber(value, 531) })}
         />
@@ -767,42 +737,18 @@ export default function App() {
     );
   };
 
-  const renderTopologyEditor = () => {
-    if (selectedTopology === 'closed_box') {
-      return renderClosedBoxEditor();
-    }
-    if (selectedTopology === 'bass_reflex') {
-      return renderBassReflexEditor();
-    }
-    if (selectedTopology === 'transmission_line') {
-      return (
-        <div style={{ fontSize: 13, color: '#475569', lineHeight: 1.5 }}>
-          Transmission Line remains a seed preview. This line does not yet claim truthful runtime support.
-        </div>
-      );
-    }
-    return (
-      <div style={{ fontSize: 13, color: '#475569', lineHeight: 1.5 }}>
-        Horn remains a seed preview. This line does not yet claim truthful runtime support.
-      </div>
-    );
-  };
+  const renderPlaceholderEditor = (title: string, note: string) => (
+    <>
+      <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>{title}</div>
+      <div style={{ fontSize: 13, color: '#475569', lineHeight: 1.5 }}>{note}</div>
+    </>
+  );
 
   return (
-    <div
-      style={{
-        width: '100vw',
-        height: '100vh',
-        display: 'flex',
-        flexDirection: 'column',
-        margin: 0,
-        padding: 0,
-        background: '#f8fafc',
-      }}
-    >
+    <div style={{ width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', margin: 0, padding: 0 }}>
       <div
         style={{
-          padding: '14px 18px',
+          padding: '14px 16px',
           background: '#0f172a',
           color: '#fff',
           display: 'flex',
@@ -812,33 +758,24 @@ export default function App() {
         }}
       >
         <div>
-          <div style={{ fontWeight: 700 }}>os-lem Studio</div>
-          <div style={{ fontSize: 12, color: '#cbd5e1' }}>
+          <strong>os-lem Studio</strong>
+          <div style={{ fontSize: 12, opacity: 0.85 }}>
             Template-seeded acoustic topology composition workbench
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-          <span
-            style={{
-              fontSize: 12,
-              padding: '6px 10px',
-              borderRadius: 999,
-              background: isCompositionMode ? '#7c2d12' : '#14532d',
-            }}
-          >
-            {isCompositionMode ? 'Composition Mode' : 'Seeded Anchor Mode'}
-          </span>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <StatusBadge text={graphAssessment.status.replace(/_/g, ' ')} tone={statusTone} />
           <button
             onClick={handleSimulate}
             disabled={!canRunSimulation}
-            title={runtimeReason}
+            title={canRunSimulation ? 'Run validated simulation path' : graphAssessment.reasons.join(' | ')}
             style={{
               padding: '8px 14px',
               cursor: canRunSimulation ? 'pointer' : 'not-allowed',
-              background: canRunSimulation ? '#22c55e' : '#64748b',
+              background: canRunSimulation ? '#22c55e' : '#94a3b8',
               color: 'white',
               border: 'none',
-              borderRadius: 8,
+              borderRadius: 6,
             }}
           >
             Run Simulation
@@ -846,74 +783,93 @@ export default function App() {
         </div>
       </div>
 
+      <div style={{ padding: '14px 16px', borderBottom: '1px solid #cbd5e1', background: '#f8fafc' }}>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+          <TopologyCard
+            title="Closed Box"
+            subtitle="Validated runnable anchor"
+            status="supported"
+            active={selectedTopology === 'closed_box'}
+            onClick={() => resetToTopologySeed('closed_box')}
+          />
+          <TopologyCard
+            title="Bass Reflex"
+            subtitle="Seeded graph path"
+            status="gated"
+            active={selectedTopology === 'bass_reflex'}
+            onClick={() => resetToTopologySeed('bass_reflex')}
+          />
+          <TopologyCard
+            title="Transmission Line"
+            subtitle="Seed only"
+            status="upcoming"
+            active={selectedTopology === 'transmission_line'}
+            onClick={() => resetToTopologySeed('transmission_line')}
+          />
+          <TopologyCard
+            title="Horn"
+            subtitle="Seed only"
+            status="upcoming"
+            active={selectedTopology === 'horn'}
+            onClick={() => resetToTopologySeed('horn')}
+          />
+        </div>
+        <div style={{ fontSize: 13, color: '#334155' }}>
+          Templates seed an initial graph. The editable graph is the real working object; runtime eligibility now comes
+          from a single graph-to-kernel compilability assessment.
+        </div>
+      </div>
+
       <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+          <div style={{ flex: 1, minHeight: 0, borderBottom: '1px solid #cbd5e1' }}>
+            <ReactFlow
+              nodes={nodes}
+              edges={edges}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              onConnect={onConnect}
+              onSelectionChange={onSelectionChange}
+              fitView
+            >
+              <Background />
+              <Controls />
+            </ReactFlow>
+          </div>
+          <div style={{ height: '38%', minHeight: 220, background: '#fff' }}>
+            <ChartPanel simulationData={simulationResult} />
+          </div>
+        </div>
+
         <div
           style={{
-            width: 390,
+            width: 380,
+            borderLeft: '1px solid #cbd5e1',
+            background: '#fff',
             padding: 16,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 14,
-            borderRight: '1px solid #dbe3ef',
             overflowY: 'auto',
-            background: '#f8fafc',
           }}
         >
-          <SectionCard title="Topology Seeds">
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <TopologyCard
-                title="Closed Box"
-                subtitle="Validated seeded anchor"
-                status="Runnable while structure remains seeded"
-                active={selectedTopology === 'closed_box'}
-                onClick={() => reseedTopology('closed_box')}
-              />
-              <TopologyCard
-                title="Bass Reflex"
-                subtitle="Guided seeded path"
-                status="Runtime gated honestly"
-                active={selectedTopology === 'bass_reflex'}
-                onClick={() => reseedTopology('bass_reflex')}
-              />
-              <TopologyCard
-                title="Transmission Line"
-                subtitle="Seed preview"
-                status="Not runnable in this line"
-                active={selectedTopology === 'transmission_line'}
-                onClick={() => reseedTopology('transmission_line')}
-              />
-              <TopologyCard
-                title="Horn"
-                subtitle="Seed preview"
-                status="Not runnable in this line"
-                active={selectedTopology === 'horn'}
-                onClick={() => reseedTopology('horn')}
-              />
+          <div style={{ marginBottom: 18 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Compiler Boundary</div>
+            <div style={{ marginBottom: 8 }}>
+              <StatusBadge text={graphAssessment.status.replace(/_/g, ' ')} tone={statusTone} />
             </div>
-          </SectionCard>
+            <ul style={{ paddingLeft: 18, margin: 0, color: '#475569', fontSize: 13, lineHeight: 1.5 }}>
+              {graphAssessment.reasons.map((reason) => (
+                <li key={reason}>{reason}</li>
+              ))}
+            </ul>
+          </div>
 
-          <SectionCard title="Runtime Truth">
-            <RuntimeStatusRow
-              label="Current graph"
-              value={isCompositionMode ? 'Composition / not guaranteed runnable' : 'Matches current seed'}
-              tone={isCompositionMode ? 'warning' : 'good'}
-            />
-            <RuntimeStatusRow label="Selected topology" value={selectedTopology.replace('_', ' ')} />
-            <RuntimeStatusRow
-              label="Runtime eligibility"
-              value={canRunSimulation ? 'Validated anchor path' : 'Gated / partial / preview'}
-              tone={canRunSimulation ? 'good' : 'warning'}
-            />
-            <div style={{ fontSize: 12, color: '#475569', marginTop: 10, lineHeight: 1.5 }}>{runtimeReason}</div>
-          </SectionCard>
-
-          <SectionCard title="Graph History & Recovery">
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+          <div style={{ marginBottom: 18, borderTop: '1px solid #e2e8f0', paddingTop: 16 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Graph History</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <button
                 onClick={handleUndo}
                 disabled={!canUndo}
                 style={{
-                  padding: '8px 12px',
+                  padding: '8px 10px',
                   borderRadius: 8,
                   border: '1px solid #cbd5e1',
                   background: canUndo ? '#fff' : '#f1f5f9',
@@ -926,7 +882,7 @@ export default function App() {
                 onClick={handleRedo}
                 disabled={!canRedo}
                 style={{
-                  padding: '8px 12px',
+                  padding: '8px 10px',
                   borderRadius: 8,
                   border: '1px solid #cbd5e1',
                   background: canRedo ? '#fff' : '#f1f5f9',
@@ -938,7 +894,7 @@ export default function App() {
               <button
                 onClick={handleResetToSeed}
                 style={{
-                  padding: '8px 12px',
+                  padding: '8px 10px',
                   borderRadius: 8,
                   border: '1px solid #cbd5e1',
                   background: '#fff',
@@ -948,115 +904,76 @@ export default function App() {
                 Reset to Seed
               </button>
             </div>
-            <div style={{ fontSize: 12, color: '#475569', lineHeight: 1.5 }}>
-              Seed and working graph are stored separately. Undo/redo operate on working graph snapshots only. Reset reuses
-              the preserved seed snapshot for the selected topology.
+            <div style={{ marginTop: 8, fontSize: 12, color: '#64748b' }}>
+              Seed snapshot is preserved separately from the working graph. Structural edits operate on the working
+              graph only.
             </div>
-          </SectionCard>
+          </div>
 
-          <SectionCard title="Topology-Aware Working Parameters">{renderTopologyEditor()}</SectionCard>
-
-          <SectionCard title="Structural Graph Operations">
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+          <div style={{ marginBottom: 18, borderTop: '1px solid #e2e8f0', paddingTop: 16 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Structural Editing</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <button
-                onClick={handleInsertChild}
+                onClick={attachChildToSelectedNode}
+                disabled={!selectedNodeId}
                 style={{
-                  padding: '8px 12px',
+                  padding: '8px 10px',
                   borderRadius: 8,
                   border: '1px solid #cbd5e1',
-                  background: '#fff',
-                  cursor: 'pointer',
+                  background: selectedNodeId ? '#fff' : '#f1f5f9',
+                  cursor: selectedNodeId ? 'pointer' : 'not-allowed',
                 }}
               >
-                Insert Child
+                Insert Element
               </button>
               <button
-                onClick={handleSplitSelectedPath}
+                onClick={splitSelectedPath}
+                disabled={!selectedEdgeId}
                 style={{
-                  padding: '8px 12px',
+                  padding: '8px 10px',
                   borderRadius: 8,
                   border: '1px solid #cbd5e1',
-                  background: '#fff',
-                  cursor: 'pointer',
+                  background: selectedEdgeId ? '#fff' : '#f1f5f9',
+                  cursor: selectedEdgeId ? 'pointer' : 'not-allowed',
                 }}
               >
                 Split Path
               </button>
               <button
-                onClick={handleDeleteSelectedLeaf}
+                onClick={deleteSelectedLeaf}
+                disabled={!selectedNodeId}
                 style={{
-                  padding: '8px 12px',
+                  padding: '8px 10px',
                   borderRadius: 8,
                   border: '1px solid #cbd5e1',
-                  background: '#fff',
-                  cursor: 'pointer',
+                  background: selectedNodeId ? '#fff' : '#f1f5f9',
+                  cursor: selectedNodeId ? 'pointer' : 'not-allowed',
                 }}
               >
                 Delete Leaf
               </button>
             </div>
-            <div style={{ fontSize: 12, color: '#475569', lineHeight: 1.5 }}>
-              Structural edits operate on the working graph only. They are captured in history and may move the graph out
-              of the currently validated seeded runtime anchor.
+            <div style={{ marginTop: 8, fontSize: 12, color: '#64748b' }}>
+              Structural edits are allowed, but they may move the graph beyond the validated runnable anchor.
             </div>
-          </SectionCard>
-
-          <SectionCard title="Graph Surface">
-            <button
-              onClick={() => setShowAdvancedCanvas((current) => !current)}
-              style={{
-                padding: '8px 12px',
-                borderRadius: 8,
-                border: '1px solid #cbd5e1',
-                background: '#fff',
-                cursor: 'pointer',
-              }}
-            >
-              {showAdvancedCanvas ? 'Hide Graph Surface' : 'Show Graph Surface'}
-            </button>
-            <div style={{ fontSize: 12, color: '#475569', lineHeight: 1.5, marginTop: 10 }}>
-              The graph is the primary working object. Templates seed it, structural edits transform it, and history keeps
-              the session controlled.
-            </div>
-          </SectionCard>
-        </div>
-
-        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-          <div style={{ flex: 1, minHeight: 0, display: 'flex', borderBottom: '1px solid #dbe3ef' }}>
-            <div style={{ flex: 1, minWidth: 0, background: '#ffffff' }}>
-              {showAdvancedCanvas ? (
-                <ReactFlow
-                  nodes={nodes}
-                  edges={edges}
-                  onNodesChange={onNodesChange}
-                  onEdgesChange={onEdgesChange}
-                  onConnect={onConnect}
-                  onSelectionChange={onSelectionChange}
-                  fitView
-                >
-                  <Background />
-                  <Controls />
-                </ReactFlow>
-              ) : (
-                <div
-                  style={{
-                    height: '100%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: '#64748b',
-                    fontSize: 14,
-                  }}
-                >
-                  Graph surface hidden. Re-open it from the sidebar when you want to edit the working graph directly.
-                </div>
-              )}
-            </div>
-            <Inspector selectedNode={selectedCanvasNode} updateNodeData={updateNodeData} />
           </div>
 
-          <div style={{ height: '36%', minHeight: 260, width: '100%', background: '#fff' }}>
-            <ChartPanel simulationData={simulationResult} />
+          <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 16, marginBottom: 18 }}>
+            {selectedTopology === 'closed_box'
+              ? renderClosedBoxEditor()
+              : selectedTopology === 'bass_reflex'
+                ? renderBassReflexEditor()
+                : selectedTopology === 'transmission_line'
+                  ? renderPlaceholderEditor(
+                      'Transmission Line Seed',
+                      'Transmission Line remains a seed-only graph path in this line.',
+                    )
+                  : renderPlaceholderEditor('Horn Seed', 'Horn remains a seed-only graph path in this line.')}
+          </div>
+
+          <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 16 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Selected Node Inspector</div>
+            <Inspector selectedNode={selectedCanvasNode} updateNodeData={updateNodeData} />
           </div>
         </div>
       </div>
