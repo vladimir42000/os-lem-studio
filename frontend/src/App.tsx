@@ -312,6 +312,68 @@ function StatusBadge({ text, tone }: { text: string; tone: 'good' | 'warning' | 
   );
 }
 
+function formatGraphAssessmentStatus(status: string): string {
+  return status.replace(/_/g, ' ');
+}
+
+function getAnchorWorkflowCopy(topology: TopologyId, status: string, reasons: string[]) {
+  if (topology === 'closed_box' && status === 'compilable_anchor') {
+    return {
+      title: 'Validated Closed Box anchor',
+      detail: 'The working graph still matches the exact validated Closed Box runnable anchor.',
+      runLabel: 'Run Closed Box Anchor',
+      resetLabel: 'Reset to exact Closed Box anchor',
+    };
+  }
+
+  if (topology === 'closed_box' && status === 'composition_not_yet_compilable') {
+    return {
+      title: 'Closed Box composition mode',
+      detail:
+        reasons[0] ??
+        'Structural edits moved the working graph beyond the exact validated Closed Box anchor. Reset to the stored seed to restore the runnable anchor.',
+      runLabel: 'Simulation gated',
+      resetLabel: 'Reset to exact Closed Box anchor',
+    };
+  }
+
+  if (topology === 'closed_box' && status === 'invalid_graph') {
+    return {
+      title: 'Closed Box anchor invalid',
+      detail:
+        reasons[0] ??
+        'The working graph no longer satisfies the required Closed Box primitive/connection motif. Reset to the stored seed to restore the runnable anchor.',
+      runLabel: 'Simulation gated',
+      resetLabel: 'Reset to exact Closed Box anchor',
+    };
+  }
+
+  if (topology === 'bass_reflex') {
+    return {
+      title: 'Seeded but gated Bass Reflex path',
+      detail: reasons[0] ?? 'Bass Reflex remains explicitly gated in the current truthful line.',
+      runLabel: 'Simulation gated',
+      resetLabel: 'Reset to Bass Reflex seed',
+    };
+  }
+
+  if (topology === 'transmission_line') {
+    return {
+      title: 'Seed-only Transmission Line path',
+      detail: reasons[0] ?? 'Transmission Line remains seeded but non-runnable in the current truthful line.',
+      runLabel: 'Simulation gated',
+      resetLabel: 'Reset to Transmission Line seed',
+    };
+  }
+
+  return {
+    title: 'Seed-only Horn path',
+    detail: reasons[0] ?? 'Horn remains seeded but non-runnable in the current truthful line.',
+    runLabel: 'Simulation gated',
+    resetLabel: 'Reset to Horn seed',
+  };
+}
+
 function nextNodeId(nodes: ReactFlowNode[], prefix: string): string {
   let index = 1;
   const existing = new Set(nodes.map((node) => node.id));
@@ -354,6 +416,14 @@ export default function App() {
     [selectedTopology, canvasNodes, canvasEdges, seedCanvasGraph],
   );
 
+  const statusLabel = useMemo(
+    () => formatGraphAssessmentStatus(graphAssessment.status),
+    [graphAssessment.status],
+  );
+  const anchorWorkflow = useMemo(
+    () => getAnchorWorkflowCopy(selectedTopology, graphAssessment.status, graphAssessment.reasons),
+    [selectedTopology, graphAssessment.status, graphAssessment.reasons],
+  );
   const canRunSimulation = graphAssessment.status === 'compilable_anchor';
   const canUndo = historyIndex > 0;
   const canRedo = historyIndex < history.length - 1;
@@ -764,11 +834,11 @@ export default function App() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <StatusBadge text={graphAssessment.status.replace(/_/g, ' ')} tone={statusTone} />
+          <StatusBadge text={statusLabel} tone={statusTone} />
           <button
             onClick={handleSimulate}
             disabled={!canRunSimulation}
-            title={canRunSimulation ? 'Run validated simulation path' : graphAssessment.reasons.join(' | ')}
+            title={canRunSimulation ? 'Run exact validated Closed Box anchor' : graphAssessment.reasons.join(' | ')}
             style={{
               padding: '8px 14px',
               cursor: canRunSimulation ? 'pointer' : 'not-allowed',
@@ -778,7 +848,7 @@ export default function App() {
               borderRadius: 6,
             }}
           >
-            Run Simulation
+            {anchorWorkflow.runLabel}
           </button>
         </div>
       </div>
@@ -818,6 +888,18 @@ export default function App() {
           Templates seed an initial graph. The editable graph is the real working object; runtime eligibility now comes
           from a single graph-to-kernel compilability assessment.
         </div>
+        <div
+          style={{
+            marginTop: 12,
+            padding: '10px 12px',
+            borderRadius: 10,
+            border: '1px solid #cbd5e1',
+            background: selectedTopology === 'closed_box' && canRunSimulation ? '#ecfdf5' : '#fff7ed',
+          }}
+        >
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>{anchorWorkflow.title}</div>
+          <div style={{ fontSize: 12, color: '#475569', lineHeight: 1.5 }}>{anchorWorkflow.detail}</div>
+        </div>
       </div>
 
       <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
@@ -853,7 +935,10 @@ export default function App() {
           <div style={{ marginBottom: 18 }}>
             <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Compiler Boundary</div>
             <div style={{ marginBottom: 8 }}>
-              <StatusBadge text={graphAssessment.status.replace(/_/g, ' ')} tone={statusTone} />
+              <StatusBadge text={statusLabel} tone={statusTone} />
+            </div>
+            <div style={{ marginBottom: 10, fontSize: 12, color: '#475569', lineHeight: 1.5 }}>
+              <strong>{anchorWorkflow.title}:</strong> {anchorWorkflow.detail}
             </div>
             <ul style={{ paddingLeft: 18, margin: 0, color: '#475569', fontSize: 13, lineHeight: 1.5 }}>
               {graphAssessment.reasons.map((reason) => (
@@ -901,7 +986,7 @@ export default function App() {
                   cursor: 'pointer',
                 }}
               >
-                Reset to Seed
+                {anchorWorkflow.resetLabel}
               </button>
             </div>
             <div style={{ marginTop: 8, fontSize: 12, color: '#64748b' }}>
@@ -954,7 +1039,8 @@ export default function App() {
               </button>
             </div>
             <div style={{ marginTop: 8, fontSize: 12, color: '#64748b' }}>
-              Structural edits are allowed, but they may move the graph beyond the validated runnable anchor.
+              Structural edits are allowed, but they immediately move runtime truth to whatever the compiler-boundary
+              assessment now reports.
             </div>
           </div>
 
