@@ -1,4 +1,14 @@
 import type { Edge as ReactFlowEdge, Node as ReactFlowNode } from 'reactflow';
+import {
+  assessPrimitiveConstraints,
+  type PrimitiveConstraintAssessment,
+  type PrimitiveSupportEntry,
+  type TopologyId,
+} from './graphPrimitiveConstraints';
+import {
+  BASS_REFLEX_SEEDED_PATTERN,
+  CLOSED_BOX_ANCHOR_PATTERN,
+} from './graphPatterns';
 
 export type GraphCompilabilityStatus =
   | 'compilable_anchor'
@@ -16,12 +26,15 @@ export interface GraphCompilabilityAssessment {
   reasons: string[];
   canRunSimulation: boolean;
   isExactSeedMatch: boolean;
+  primitiveConstraintValid: boolean;
+  primitiveSupport: PrimitiveSupportEntry[];
   matchedPatternId: string | null;
+  matchedPatternLabel: string | null;
 }
 
 type AssessArgsObject = {
-  topology?: string | null;
-  selectedTopology?: string | null;
+  topology?: TopologyId | string | null;
+  selectedTopology?: TopologyId | string | null;
   nodes: ReactFlowNode[];
   edges: ReactFlowEdge[];
   seedGraph?: GraphSnapshot | null;
@@ -60,151 +73,135 @@ function normalizeSnapshot(snapshot: GraphSnapshot | null | undefined): string {
   return JSON.stringify({ nodes, edges });
 }
 
-function hasNodeType(nodes: ReactFlowNode[], wantedType: string): boolean {
-  for (let i = 0; i < nodes.length; i += 1) {
-    const data = (nodes[i] && nodes[i].data) || {};
-    if (data.type === wantedType) {
-      return true;
-    }
+function normalizeTopology(topology: TopologyId | string | null | undefined): TopologyId {
+  const raw = String(topology || 'closed_box');
+  if (raw === 'bass_reflex' || raw === 'transmission_line' || raw === 'horn') {
+    return raw;
   }
-  return false;
+  return 'closed_box';
 }
 
-function countNodeType(nodes: ReactFlowNode[], wantedType: string): number {
-  let count = 0;
-  for (let i = 0; i < nodes.length; i += 1) {
-    const data = (nodes[i] && nodes[i].data) || {};
-    if (data.type === wantedType) {
-      count += 1;
-    }
+function isExactSeedMatch(
+  seedGraph: GraphSnapshot | null | undefined,
+  currentGraph: GraphSnapshot | null | undefined,
+): boolean {
+  const seed = normalizeSnapshot(seedGraph);
+  if (!seed) {
+    return false;
   }
-  return count;
+  return seed === normalizeSnapshot(currentGraph);
 }
 
-function determineTopology(args: AssessArgsObject): string {
-  return String(args.topology || args.selectedTopology || 'closed_box');
+function buildAssessment(
+  status: GraphCompilabilityStatus,
+  reasons: string[],
+  canRunSimulation: boolean,
+  primitiveAssessment: PrimitiveConstraintAssessment,
+  exactSeedMatch: boolean,
+): GraphCompilabilityAssessment {
+  return {
+    status,
+    reasons,
+    canRunSimulation,
+    isExactSeedMatch: exactSeedMatch,
+    primitiveConstraintValid: primitiveAssessment.isValid,
+    primitiveSupport: primitiveAssessment.primitiveSupport,
+    matchedPatternId: primitiveAssessment.matchedPattern?.id ?? null,
+    matchedPatternLabel: primitiveAssessment.matchedPattern?.label ?? null,
+  };
 }
 
 function assessFromNormalizedArgs(args: AssessArgsObject): GraphCompilabilityAssessment {
-  const topology = determineTopology(args);
+  const topology = normalizeTopology(args.topology || args.selectedTopology);
   const nodes = args.nodes || [];
   const edges = args.edges || [];
   const seedGraph = args.seedGraph || args.seedSnapshot || null;
   const currentGraph = args.currentGraph || args.workingGraph || { nodes, edges };
 
-  if (nodes.length === 0) {
-    return {
-      status: 'invalid_graph',
-      reasons: ['graph is empty'],
-      canRunSimulation: false,
-      isExactSeedMatch: false,
-      matchedPatternId: null,
-    };
+  const primitiveAssessment = assessPrimitiveConstraints(topology, nodes, edges);
+
+  if (!primitiveAssessment.isValid) {
+    return buildAssessment(
+      'invalid_graph',
+      primitiveAssessment.reasons,
+      false,
+      primitiveAssessment,
+      false,
+    );
   }
 
-  const hasDriver = hasNodeType(nodes, 'driver');
-  const hasVolume = hasNodeType(nodes, 'volume');
-  const hasRadiator = hasNodeType(nodes, 'radiator');
-  const hasDuct = hasNodeType(nodes, 'duct');
+  const exactSeedMatch = isExactSeedMatch(seedGraph, currentGraph);
+  const matchedPattern = primitiveAssessment.matchedPattern;
 
-  if (!hasDriver) {
-    return {
-      status: 'invalid_graph',
-      reasons: ['missing required driver primitive'],
-      canRunSimulation: false,
-      isExactSeedMatch: false,
-      matchedPatternId: null,
-    };
-  }
-
-  if (topology === 'closed_box') {
-    if (!hasVolume || !hasRadiator) {
-      return {
-        status: 'invalid_graph',
-        reasons: ['closed box anchor requires driver, volume, and radiator primitives'],
-        canRunSimulation: false,
-        isExactSeedMatch: false,
-        matchedPatternId: 'closed_box_anchor',
-      };
+  if (matchedPattern?.id === CLOSED_BOX_ANCHOR_PATTERN.id) {
+    if (topology === 'closed_box' && exactSeedMatch) {
+      return buildAssessment(
+        'compilable_anchor',
+        ['matches validated Closed Box anchor'],
+        true,
+        primitiveAssessment,
+        true,
+      );
     }
 
-    if (hasDuct) {
-      return {
-        status: 'composition_not_yet_compilable',
-        reasons: ['structural edits introduced a duct outside the validated closed-box anchor'],
-        canRunSimulation: false,
-        isExactSeedMatch: false,
-        matchedPatternId: 'closed_box_anchor',
-      };
+    return buildAssessment(
+      'composition_not_yet_compilable',
+      ['structural edits moved graph beyond the exact validated Closed Box anchor'],
+      false,
+      primitiveAssessment,
+      false,
+    );
+  }
+
+  if (matchedPattern?.id === BASS_REFLEX_SEEDED_PATTERN.id) {
+    if (topology === 'bass_reflex' && exactSeedMatch) {
+      return buildAssessment(
+        'seeded_but_not_runnable',
+        ['seeded Bass Reflex path still gated in this line'],
+        false,
+        primitiveAssessment,
+        true,
+      );
     }
 
-    const exactClosedBoxCounts =
-      countNodeType(nodes, 'driver') === 1 &&
-      countNodeType(nodes, 'volume') === 1 &&
-      countNodeType(nodes, 'radiator') === 1 &&
-      nodes.length === 3 &&
-      edges.length === 2;
-
-    const isExactSeedMatch = normalizeSnapshot(seedGraph) !== '' && normalizeSnapshot(seedGraph) === normalizeSnapshot(currentGraph);
-
-    if (exactClosedBoxCounts && isExactSeedMatch) {
-      return {
-        status: 'compilable_anchor',
-        reasons: ['matches validated Closed Box anchor'],
-        canRunSimulation: true,
-        isExactSeedMatch: true,
-        matchedPatternId: 'closed_box_anchor',
-      };
-    }
-
-    return {
-      status: 'composition_not_yet_compilable',
-      reasons: ['structural edits moved graph beyond the exact validated Closed Box anchor'],
-      canRunSimulation: false,
-      isExactSeedMatch: false,
-      matchedPatternId: 'closed_box_anchor',
-    };
+    return buildAssessment(
+      'composition_not_yet_compilable',
+      ['Bass Reflex edits moved graph beyond the current seeded/gated support line'],
+      false,
+      primitiveAssessment,
+      false,
+    );
   }
 
-  if (topology === 'bass_reflex') {
-    return {
-      status: 'seeded_but_not_runnable',
-      reasons: ['seeded Bass Reflex path remains gated in the current truthful line'],
-      canRunSimulation: false,
-      isExactSeedMatch: normalizeSnapshot(seedGraph) !== '' && normalizeSnapshot(seedGraph) === normalizeSnapshot(currentGraph),
-      matchedPatternId: 'bass_reflex_seed',
-    };
+  if ((topology === 'transmission_line' || topology === 'horn') && exactSeedMatch) {
+    return buildAssessment(
+      'seeded_but_not_runnable',
+      [`${topology.replace(/_/g, ' ')} remains seed-only and non-runnable in this line`],
+      false,
+      primitiveAssessment,
+      true,
+    );
   }
 
-  if (topology === 'transmission_line' || topology === 'horn') {
-    return {
-      status: 'seeded_but_not_runnable',
-      reasons: ['selected topology is seed-only and not runnable in the current truthful line'],
-      canRunSimulation: false,
-      isExactSeedMatch: normalizeSnapshot(seedGraph) !== '' && normalizeSnapshot(seedGraph) === normalizeSnapshot(currentGraph),
-      matchedPatternId: topology + '_seed',
-    };
-  }
-
-  return {
-    status: 'composition_not_yet_compilable',
-    reasons: ['current graph is outside the bounded compiler support line'],
-    canRunSimulation: false,
-    isExactSeedMatch: false,
-    matchedPatternId: null,
-  };
+  return buildAssessment(
+    'composition_not_yet_compilable',
+    ['structural edits moved graph beyond current compiler support'],
+    false,
+    primitiveAssessment,
+    false,
+  );
 }
 
 export function assessGraphCompilability(args: AssessArgsObject): GraphCompilabilityAssessment;
 export function assessGraphCompilability(
-  topology: string | null | undefined,
+  topology: TopologyId | string | null | undefined,
   nodes: ReactFlowNode[],
   edges: ReactFlowEdge[],
   seedGraph?: GraphSnapshot | null,
   currentGraph?: GraphSnapshot | null,
 ): GraphCompilabilityAssessment;
 export function assessGraphCompilability(
-  arg1: AssessArgsObject | string | null | undefined,
+  arg1: AssessArgsObject | TopologyId | string | null | undefined,
   arg2?: ReactFlowNode[],
   arg3?: ReactFlowEdge[],
   arg4?: GraphSnapshot | null,
@@ -215,10 +212,12 @@ export function assessGraphCompilability(
   }
 
   return assessFromNormalizedArgs({
-    topology: (arg1 as string | null | undefined) || 'closed_box',
+    topology: arg1 as TopologyId | string | null | undefined,
     nodes: arg2 || [],
     edges: arg3 || [],
     seedGraph: arg4 || null,
     currentGraph: arg5 || null,
   });
 }
+
+export default assessGraphCompilability;
