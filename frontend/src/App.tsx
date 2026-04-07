@@ -374,6 +374,51 @@ function getAnchorWorkflowCopy(topology: TopologyId, status: string, reasons: st
   };
 }
 
+function getAnchorObservableTruth(topology: TopologyId, status: string, reasons: string[]) {
+  if (topology === 'closed_box' && status === 'compilable_anchor') {
+    return {
+      title: 'Trusted anchor observable basis',
+      detail:
+        'The exact validated Closed Box anchor currently trusts the manual runtime path for system SPL and impedance magnitude. Other returned observables may still be shown, but they are not the basis of current anchor validation.',
+      tone: 'good' as const,
+    };
+  }
+
+  if (topology === 'closed_box') {
+    return {
+      title: 'Observable/runtime trust dropped',
+      detail:
+        reasons[0] ??
+        'The working graph no longer matches the exact validated Closed Box anchor, so Studio drops from trusted anchor observables to gated or composition-mode truth.',
+      tone: 'warning' as const,
+    };
+  }
+
+  if (topology === 'bass_reflex') {
+    return {
+      title: 'No validated BR system observable path yet',
+      detail:
+        reasons[0] ??
+        'Bass Reflex remains seeded and gated because the current truthful line still lacks a validated first-class combined BR system SPL path.',
+      tone: 'warning' as const,
+    };
+  }
+
+  if (topology === 'transmission_line') {
+    return {
+      title: 'No validated observable/runtime path',
+      detail: 'Transmission Line remains seed-only and non-runnable in the current truthful line.',
+      tone: 'neutral' as const,
+    };
+  }
+
+  return {
+    title: 'No validated observable/runtime path',
+    detail: 'Horn remains seed-only and non-runnable in the current truthful line.',
+    tone: 'neutral' as const,
+  };
+}
+
 function nextNodeId(nodes: ReactFlowNode[], prefix: string): string {
   let index = 1;
   const existing = new Set(nodes.map((node) => node.id));
@@ -422,6 +467,10 @@ export default function App() {
   );
   const anchorWorkflow = useMemo(
     () => getAnchorWorkflowCopy(selectedTopology, graphAssessment.status, graphAssessment.reasons),
+    [selectedTopology, graphAssessment.status, graphAssessment.reasons],
+  );
+  const anchorObservableTruth = useMemo(
+    () => getAnchorObservableTruth(selectedTopology, graphAssessment.status, graphAssessment.reasons),
     [selectedTopology, graphAssessment.status, graphAssessment.reasons],
   );
   const canRunSimulation = graphAssessment.status === 'compilable_anchor';
@@ -899,6 +948,16 @@ export default function App() {
         >
           <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>{anchorWorkflow.title}</div>
           <div style={{ fontSize: 12, color: '#475569', lineHeight: 1.5 }}>{anchorWorkflow.detail}</div>
+          <div
+            style={{
+              marginTop: 10,
+              paddingTop: 10,
+              borderTop: '1px solid #cbd5e1',
+            }}
+          >
+            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>{anchorObservableTruth.title}</div>
+            <div style={{ fontSize: 12, color: '#475569', lineHeight: 1.5 }}>{anchorObservableTruth.detail}</div>
+          </div>
         </div>
       </div>
 
@@ -939,6 +998,9 @@ export default function App() {
             </div>
             <div style={{ marginBottom: 10, fontSize: 12, color: '#475569', lineHeight: 1.5 }}>
               <strong>{anchorWorkflow.title}:</strong> {anchorWorkflow.detail}
+            </div>
+            <div style={{ marginBottom: 10, fontSize: 12, color: '#475569', lineHeight: 1.5 }}>
+              <strong>{anchorObservableTruth.title}:</strong> {anchorObservableTruth.detail}
             </div>
             <ul style={{ paddingLeft: 18, margin: 0, color: '#475569', fontSize: 13, lineHeight: 1.5 }}>
               {graphAssessment.reasons.map((reason) => (
