@@ -100,6 +100,7 @@ def _json_safe_dict_or_empty(value: Any) -> Dict[str, Any]:
 
 @app.post("/api/simulate")
 def perform_simulation(request: SimulationRequest):
+    """Thin runner boundary: canonical model + frequencies in, numeric arrays + warnings out."""
     try:
         result = run_simulation(request.model_dict, request.frequencies_hz)
 

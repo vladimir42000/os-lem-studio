@@ -17,6 +17,7 @@ import 'reactflow/dist/style.css';
 import Inspector from './Inspector';
 import ChartPanel from './ChartPanel';
 import { buildModelDict } from './translator';
+import { runSimulationThin } from './thinRunner';
 import { assessGraphCompilability } from './graphCompilability';
 import type { CanvasEdge, CanvasNode } from './types';
 
@@ -704,24 +705,11 @@ export default function App() {
     }
 
     const frequencies = Array.from({ length: 150 }, (_, index) => 20 * Math.pow(1000 / 20, index / 149));
-    const payload = {
-      model_dict: buildModelDict(canvasNodes, canvasEdges),
-      frequencies_hz: frequencies,
-      experimental_mode: false,
-    };
-
+    const canonicalModel = buildModelDict(canvasNodes, canvasEdges);
     try {
-      const response = await fetch('http://localhost:8000/api/simulate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const data = await response.json();
-      if (data.status === 'success') {
-        setSimulationResult(data.data);
-      } else {
-        alert(`Solver Error: ${JSON.stringify(data)}`);
-      }
+      const simulationData = await runSimulationThin({ canonicalModel, frequenciesHz: frequencies });
+      console.debug('[thin-runner proof path] canonicalModel -> backend -> numeric curves', simulationData);
+      setSimulationResult(simulationData);
     } catch (_error) {
       alert('Failed to connect to backend.');
     }
