@@ -22,6 +22,7 @@ import { buildModelDict } from './translator';
 import { runSimulationThin } from './thinRunner';
 import { assessGraphCompilability } from './graphCompilability';
 import type { CanvasEdge, CanvasNode } from './types';
+import SimulationResultExportControls from './SimulationResultExportControls';
 
 type TopologyId = 'closed_box' | 'bass_reflex' | 'transmission_line' | 'horn';
 
@@ -976,7 +977,8 @@ export default function App() {
             </ReactFlow>
           </div>
           <div style={{ height: '38%', minHeight: 220, background: '#fff' }}>
-            <ChartPanel simulationData={simulationResult} />
+            <SimulationResultExportControls simulationResult={simulationResult} />
+        <ChartPanel simulationData={simulationResult} />
         <CanonicalModelFileControls
           canonicalModel={canonicalModel as Record<string, unknown>}
           onLoadCanonicalModel={(model) => {
