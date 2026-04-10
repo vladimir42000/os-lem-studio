@@ -17,6 +17,7 @@ import 'reactflow/dist/style.css';
 import Inspector from './Inspector';
 import ChartPanel from './ChartPanel';
 import CanonicalModelInspection from './CanonicalModelInspection';
+import CanonicalModelFileControls from './CanonicalModelFileControls';
 import { buildModelDict } from './translator';
 import { runSimulationThin } from './thinRunner';
 import { assessGraphCompilability } from './graphCompilability';
@@ -445,7 +446,13 @@ export default function App() {
   const canvasNodes = useMemo(() => nodes.map(toCanvasNode), [nodes]);
   const canvasEdges = useMemo(() => edges.map(toCanvasEdge), [edges]);
 
-  const canonicalModel = useMemo(() => buildModelDict(canvasNodes, canvasEdges), [canvasNodes, canvasEdges]);
+  const [loadedCanonicalModel, setLoadedCanonicalModel] = useState<Record<string, unknown> | null>(null);
+  const [canonicalModelLoadError, setCanonicalModelLoadError] = useState<string | null>(null);
+  const graphDerivedCanonicalModel = useMemo(() => buildModelDict(canvasNodes, canvasEdges), [canvasNodes, canvasEdges]);
+  const canonicalModel = useMemo(
+    () => loadedCanonicalModel ?? graphDerivedCanonicalModel,
+    [loadedCanonicalModel, graphDerivedCanonicalModel],
+  );
   const seedCanvasGraph = useMemo(
     () => ({
       nodes: seedGraph.nodes.map(toCanvasNode),
@@ -970,6 +977,22 @@ export default function App() {
           </div>
           <div style={{ height: '38%', minHeight: 220, background: '#fff' }}>
             <ChartPanel simulationData={simulationResult} />
+        <CanonicalModelFileControls
+          canonicalModel={canonicalModel as Record<string, unknown>}
+          onLoadCanonicalModel={(model) => {
+            setLoadedCanonicalModel(model);
+            setCanonicalModelLoadError(null);
+          }}
+          onLoadCanonicalModelError={(message) => {
+            setCanonicalModelLoadError(message);
+          }}
+          onClearLoadedCanonicalModel={() => {
+            setLoadedCanonicalModel(null);
+            setCanonicalModelLoadError(null);
+          }}
+          hasLoadedOverride={loadedCanonicalModel !== null}
+          loadError={canonicalModelLoadError}
+        />
         <CanonicalModelInspection canonicalModel={canonicalModel} />
           </div>
         </div>
