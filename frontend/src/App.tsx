@@ -16,6 +16,7 @@ import type {
 import 'reactflow/dist/style.css';
 import Inspector from './Inspector';
 import ChartPanel from './ChartPanel';
+import SimulationWarningsSurface from './SimulationWarningsSurface';
 import CanonicalModelInspection from './CanonicalModelInspection';
 import CanonicalModelFileControls from './CanonicalModelFileControls';
 import { buildModelDict } from './translator';
@@ -978,7 +979,10 @@ export default function App() {
           </div>
           <div style={{ height: '38%', minHeight: 220, background: '#fff' }}>
             <SimulationResultExportControls simulationResult={simulationResult} />
-        <ChartPanel simulationData={simulationResult} />
+        <>
+            <SimulationWarningsSurface warnings={Array.isArray(simulationResult?.warnings) ? simulationResult.warnings : []} />
+            <ChartPanel simulationData={simulationResult} />
+          </>
         <CanonicalModelFileControls
           canonicalModel={canonicalModel as Record<string, unknown>}
           onLoadCanonicalModel={(model) => {
