@@ -28,6 +28,8 @@ import RunnerStateSummary from './RunnerStateSummary';
 
 type TopologyId = 'closed_box' | 'bass_reflex' | 'transmission_line' | 'horn';
 
+type CanonicalModelSourceKind = 'graph-derived' | 'loaded-override';
+
 type GraphSnapshot = {
   nodes: ReactFlowNode[];
   edges: ReactFlowEdge[];
@@ -242,6 +244,98 @@ function stableSnapshotKey(value: unknown): string {
   }
 }
 
+
+function canonicalModelSourceLabelFor(kind: CanonicalModelSourceKind): string {
+  return kind === 'loaded-override'
+    ? 'Loaded override is authoritative'
+    : 'Graph-derived model is authoritative';
+}
+
+function canonicalModelSourceDetailFor(kind: CanonicalModelSourceKind): string {
+  return kind === 'loaded-override'
+    ? 'The loaded canonical model file is currently the active thin-runner source. New runs and fresh result ownership stay attached to this loaded override until you explicitly revert.'
+    : 'The working graph currently derives the active thin-runner source. New runs and fresh result ownership stay attached to the graph-derived canonical model unless you load an override.';
+}
+
+function resultOwnershipLabelFor({
+  hasResult,
+  resultSourceKind,
+  snapshotMatchesCurrent,
+  sourceMatchesCurrent,
+}: {
+  hasResult: boolean;
+  resultSourceKind: CanonicalModelSourceKind | null;
+  snapshotMatchesCurrent: boolean;
+  sourceMatchesCurrent: boolean;
+}): string {
+  if (!hasResult) {
+    return 'No result owner recorded yet';
+  }
+
+  if (resultSourceKind == null) {
+    return 'Unknown prior source';
+  }
+
+  const sourceOwner = resultSourceKind === 'loaded-override' ? 'loaded override source' : 'graph-derived source';
+
+  if (snapshotMatchesCurrent && sourceMatchesCurrent) {
+    return `Current ${sourceOwner}`;
+  }
+
+  const driftReasons: string[] = [];
+  if (!sourceMatchesCurrent) {
+    driftReasons.push('source changed');
+  }
+  if (!snapshotMatchesCurrent) {
+    driftReasons.push('snapshot changed');
+  }
+
+  return driftReasons.length > 0
+    ? `Earlier ${sourceOwner} (${driftReasons.join('; ')})`
+    : `Earlier ${sourceOwner}`;
+}
+
+function computeRunnerStateTruth({
+  simulationResult,
+  latestResultCanonicalModelSnapshotKey,
+  latestResultSourceKind,
+  currentCanonicalModelSnapshotKey,
+  currentCanonicalModelSourceKind,
+}: {
+  simulationResult: unknown;
+  latestResultCanonicalModelSnapshotKey: string | null;
+  latestResultSourceKind: CanonicalModelSourceKind | null;
+  currentCanonicalModelSnapshotKey: string;
+  currentCanonicalModelSourceKind: CanonicalModelSourceKind;
+}) {
+  const resultLifecycleIsAbsent = simulationResult == null;
+  const snapshotMatchesCurrent = !resultLifecycleIsAbsent && latestResultCanonicalModelSnapshotKey === currentCanonicalModelSnapshotKey;
+  const sourceMatchesCurrent = !resultLifecycleIsAbsent && latestResultSourceKind === currentCanonicalModelSourceKind;
+  const resultLifecycleIsCurrent = !resultLifecycleIsAbsent && snapshotMatchesCurrent && sourceMatchesCurrent;
+  const resultLifecycleIsStale = !resultLifecycleIsAbsent && (!snapshotMatchesCurrent || !sourceMatchesCurrent);
+  const rerunNeeded = resultLifecycleIsStale;
+
+  return {
+    resultLifecycleIsAbsent,
+    resultLifecycleIsCurrent,
+    resultLifecycleIsStale,
+    rerunNeeded,
+    canonicalModelSourceLabel: canonicalModelSourceLabelFor(currentCanonicalModelSourceKind),
+    canonicalModelSourceDetail: canonicalModelSourceDetailFor(currentCanonicalModelSourceKind),
+    resultStateLabel: resultLifecycleIsAbsent
+      ? 'No result yet'
+      : resultLifecycleIsCurrent
+        ? 'Current result available'
+        : 'Stale result — rerun needed',
+    resultOwnershipLabel: resultOwnershipLabelFor({
+      hasResult: !resultLifecycleIsAbsent,
+      resultSourceKind: latestResultSourceKind,
+      snapshotMatchesCurrent,
+      sourceMatchesCurrent,
+    }),
+  };
+}
+
 function pushSnapshotBounded(prev: HistoryState, snapshot: GraphSnapshot): HistoryState {
   const base = prev.snapshots.slice(0, prev.index + 1);
   const appended = [...base, cloneGraphSnapshot(snapshot)];
@@ -439,6 +533,7 @@ export default function App() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(initialSeedGraph.nodes[0]?.id ?? null);
   const [simulationResult, setSimulationResult] = useState<any>(null);
   const [latestResultCanonicalModelSnapshotKey, setLatestResultCanonicalModelSnapshotKey] = useState<string | null>(null);
+  const [latestResultSourceKind, setLatestResultSourceKind] = useState<CanonicalModelSourceKind | null>(null);
   const [loadedCanonicalModelOverride, setLoadedCanonicalModelOverride] = useState<Record<string, unknown> | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
@@ -454,10 +549,32 @@ export default function App() {
   // lifecycle marker: canonical model snapshot key used for result ownership
   const canonicalModel = loadedCanonicalModelOverride ?? graphDerivedCanonicalModel;
   const canonicalModelSnapshotKey = useMemo(() => stableSnapshotKey(canonicalModel), [canonicalModel]);
-  const resultLifecycleIsAbsent = simulationResult == null;
-  const resultLifecycleIsCurrent = !resultLifecycleIsAbsent && latestResultCanonicalModelSnapshotKey === canonicalModelSnapshotKey;
-  const resultLifecycleIsStale = !resultLifecycleIsAbsent && latestResultCanonicalModelSnapshotKey !== canonicalModelSnapshotKey;
-  const rerunNeeded = resultLifecycleIsStale;
+  const currentCanonicalModelSourceKind: CanonicalModelSourceKind = loadedCanonicalModelOverride ? 'loaded-override' : 'graph-derived';
+  const runnerStateTruth = useMemo(
+    () =>
+      computeRunnerStateTruth({
+        simulationResult,
+        latestResultCanonicalModelSnapshotKey,
+        latestResultSourceKind,
+        currentCanonicalModelSnapshotKey: canonicalModelSnapshotKey,
+        currentCanonicalModelSourceKind,
+      }),
+    [
+      simulationResult,
+      latestResultCanonicalModelSnapshotKey,
+      latestResultSourceKind,
+      canonicalModelSnapshotKey,
+      currentCanonicalModelSourceKind,
+    ],
+  );
+  const {
+    resultLifecycleIsStale,
+    rerunNeeded,
+    canonicalModelSourceLabel,
+    canonicalModelSourceDetail,
+    resultStateLabel,
+    resultOwnershipLabel,
+  } = runnerStateTruth;
 
   const graphAssessment = useMemo(
     () =>
@@ -476,20 +593,6 @@ export default function App() {
   const currentWarnings = Array.isArray(simulationResult?.warnings)
     ? simulationResult.warnings.filter((warning: unknown) => typeof warning === 'string' && warning.trim().length > 0)
     : [];
-
-  const canonicalModelSourceLabel = loadedCanonicalModelOverride
-    ? 'Loaded canonical model override active'
-    : 'Graph-derived canonical model active';
-  const resultStateLabel = resultLifecycleIsAbsent
-    ? 'No result yet'
-    : resultLifecycleIsCurrent
-      ? 'Current result available'
-      : 'Stale result — rerun needed';
-  const resultOwnershipLabel = resultLifecycleIsAbsent
-    ? 'No canonical model snapshot recorded yet'
-    : resultLifecycleIsCurrent
-      ? 'Latest result matches current canonical model snapshot'
-      : 'Latest result belongs to an earlier canonical model snapshot';
 
   const anchorWorkflowCopy = getAnchorWorkflowCopy(selectedTopology, graphAssessment.status, graphAssessment.reasons ?? []);
   const statusTone: 'good' | 'warning' | 'bad' | 'neutral' =
@@ -742,11 +845,12 @@ export default function App() {
       setSimulationResult(result);
       // lifecycle marker: latest result ownership snapshot
       setLatestResultCanonicalModelSnapshotKey(runCanonicalModelSnapshotKey);
+      setLatestResultSourceKind(currentCanonicalModelSourceKind);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Thin runner failed.';
       setRunError(message);
     }
-  }, [canRunSimulation, canonicalModel, graphAssessment.reasons]);
+  }, [canRunSimulation, canonicalModel, currentCanonicalModelSourceKind, graphAssessment.reasons]);
 
   const renderTopologyEditor = () => {
     if (selectedTopology === 'closed_box' && driverNode && volumeNode && radiatorNode) {
@@ -985,6 +1089,7 @@ export default function App() {
 
         <RunnerStateSummary
           canonicalModelSourceLabel={canonicalModelSourceLabel}
+          canonicalModelSourceDetail={canonicalModelSourceDetail}
           resultStateLabel={resultStateLabel}
           resultOwnershipLabel={resultOwnershipLabel}
           warningCount={currentWarnings.length}

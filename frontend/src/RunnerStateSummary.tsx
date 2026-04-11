@@ -1,5 +1,6 @@
 interface RunnerStateSummaryProps {
   canonicalModelSourceLabel: string;
+  canonicalModelSourceDetail: string;
   resultStateLabel: string;
   resultOwnershipLabel: string;
   warningCount: number;
@@ -26,13 +27,14 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
 
 export default function RunnerStateSummary({
   canonicalModelSourceLabel,
+  canonicalModelSourceDetail,
   resultStateLabel,
   resultOwnershipLabel,
   warningCount,
   rerunNeeded,
 }: RunnerStateSummaryProps) {
   const warningLabel = warningCount > 0 ? `${warningCount} warning${warningCount === 1 ? '' : 's'}` : 'no warnings';
-  const rerunLabel = rerunNeeded ? 'rerun needed' : 'current result aligned';
+  const rerunLabel = rerunNeeded ? 'yes' : 'no';
 
   return (
     <div
@@ -48,10 +50,13 @@ export default function RunnerStateSummary({
         Thin runner state
       </div>
       <SummaryRow label="Canonical model source" value={canonicalModelSourceLabel} />
-      <SummaryRow label="Simulation result" value={resultStateLabel} />
-      <SummaryRow label="Result ownership" value={resultOwnershipLabel} />
+      <SummaryRow label="Simulation result state" value={resultStateLabel} />
+      <SummaryRow label="Displayed result belongs to" value={resultOwnershipLabel} />
+      <SummaryRow label="Rerun needed" value={rerunLabel} />
       <SummaryRow label="Warnings" value={warningLabel} />
-      <SummaryRow label="Runner expectation" value={rerunLabel} />
+      <div style={{ marginTop: 10, fontSize: 12, color: '#475569', lineHeight: 1.5 }}>
+        {canonicalModelSourceDetail}
+      </div>
     </div>
   );
 }
