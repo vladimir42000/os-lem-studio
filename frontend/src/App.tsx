@@ -24,6 +24,7 @@ import { runSimulationThin } from './thinRunner';
 import { assessGraphCompilability } from './graphCompilability';
 import type { CanvasEdge, CanvasNode } from './types';
 import SimulationResultExportControls from './SimulationResultExportControls';
+import RunnerStateSummary from './RunnerStateSummary';
 
 type TopologyId = 'closed_box' | 'bass_reflex' | 'transmission_line' | 'horn';
 
@@ -979,7 +980,12 @@ export default function App() {
           </div>
           <div style={{ height: '38%', minHeight: 220, background: '#fff' }}>
             <SimulationResultExportControls simulationResult={simulationResult} />
-        <>
+        <>        <RunnerStateSummary
+          canonicalModelSourceLabel={loadedCanonicalModel ? 'loaded canonical model override active' : 'graph-derived canonical model active'}
+          resultStateLabel={simulationResult ? 'result available' : 'no result yet'}
+          warningCount={simulationResult?.warnings?.length ?? 0}
+        />
+
             <SimulationWarningsSurface warnings={Array.isArray(simulationResult?.warnings) ? simulationResult.warnings : []} />
             <ChartPanel simulationData={simulationResult} />
           </>
