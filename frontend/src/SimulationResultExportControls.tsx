@@ -2,6 +2,8 @@ import { useMemo } from 'react';
 
 interface SimulationResultExportControlsProps {
   simulationResult: any;
+  isStale: boolean;
+  resultStateLabel: string;
 }
 
 function sanitizeFilenamePart(value: string): string {
@@ -10,6 +12,8 @@ function sanitizeFilenamePart(value: string): string {
 
 export default function SimulationResultExportControls({
   simulationResult,
+  isStale,
+  resultStateLabel,
 }: SimulationResultExportControlsProps) {
   const exportPayload = useMemo(() => {
     if (!simulationResult) {
@@ -19,9 +23,10 @@ export default function SimulationResultExportControls({
     return {
       exported_at: new Date().toISOString(),
       export_type: 'studio_simulation_result',
+      result_lifecycle: isStale ? 'stale' : 'current',
       result: simulationResult,
     };
-  }, [simulationResult]);
+  }, [simulationResult, isStale]);
 
   const handleExportJson = () => {
     if (!exportPayload) {
@@ -55,10 +60,9 @@ export default function SimulationResultExportControls({
         background: '#f8fafc',
       }}
     >
-      <div style={{ fontSize: 12, color: '#475569', lineHeight: 1.45 }}>
-        {simulationResult
-          ? 'Export the latest thin-runner simulation result exactly as it is currently held in result state.'
-          : 'Run the current canonical model first to make a simulation result available for export.'}
+      <div style={{ fontSize: 12, color: '#475569' }}>
+        Simulation result export
+        {simulationResult ? ` ready from ${resultStateLabel.toLowerCase()}.` : ' unavailable until a simulation has been run.'}
       </div>
       <button
         onClick={handleExportJson}
@@ -72,7 +76,7 @@ export default function SimulationResultExportControls({
           cursor: simulationResult ? 'pointer' : 'not-allowed',
         }}
       >
-        Export current results JSON
+        Export Results JSON
       </button>
     </div>
   );
