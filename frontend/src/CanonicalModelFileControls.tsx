@@ -7,28 +7,7 @@ interface CanonicalModelFileControlsProps {
   onClearLoadedCanonicalModel: () => void;
   hasLoadedOverride: boolean;
   loadError: string | null;
-}
-
-function SourceBadge({ hasLoadedOverride }: { hasLoadedOverride: boolean }) {
-  const active = hasLoadedOverride
-    ? { label: 'Loaded canonical model override active', bg: '#ffedd5', fg: '#9a3412' }
-    : { label: 'Graph-derived canonical model active', bg: '#dcfce7', fg: '#166534' };
-
-  return (
-    <span
-      style={{
-        display: 'inline-block',
-        padding: '3px 8px',
-        borderRadius: 999,
-        fontSize: 12,
-        fontWeight: 700,
-        background: active.bg,
-        color: active.fg,
-      }}
-    >
-      {active.label}
-    </span>
-  );
+  [key: string]: unknown;
 }
 
 export default function CanonicalModelFileControls({
@@ -79,63 +58,39 @@ export default function CanonicalModelFileControls({
       style={{
         marginTop: 12,
         marginBottom: 12,
-        padding: '12px 14px',
+        padding: '10px 12px',
         border: '1px solid #cbd5e1',
-        borderRadius: 10,
+        borderRadius: 8,
         background: '#f8fafc',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
-        <div style={{ fontWeight: 700 }}>Canonical model file</div>
-        <SourceBadge hasLoadedOverride={hasLoadedOverride} />
+      <div style={{ fontWeight: 700, marginBottom: 6 }}>Canonical Model File</div>
+      <div style={{ fontSize: 12, color: '#475569', marginBottom: 10, lineHeight: 1.45 }}>
+        Export the active canonical model as JSON, or load a previously exported canonical model back into the thin-runner path.
+        When a loaded canonical model override is active, it becomes the canonical truth for new runs until you explicitly revert.
       </div>
-
-      <div style={{ fontSize: 12, color: '#475569', lineHeight: 1.5, marginBottom: 10 }}>
-        Save the current canonical model or load a previously exported canonical model into the same thin-runner path.
-        The canonical model remains the primary saved and loaded truth for this workflow.
-      </div>
-
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <button
           onClick={exportCanonicalModel}
-          style={{
-            padding: '8px 10px',
-            borderRadius: 6,
-            border: '1px solid #cbd5e1',
-            background: '#fff',
-            cursor: 'pointer',
-          }}
+          style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer' }}
         >
-          Save canonical model JSON
+          Save Canonical Model
         </button>
         <button
           onClick={() => fileInputRef.current?.click()}
-          style={{
-            padding: '8px 10px',
-            borderRadius: 6,
-            border: '1px solid #cbd5e1',
-            background: '#fff',
-            cursor: 'pointer',
-          }}
+          style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer' }}
         >
-          Load canonical model JSON
+          Load Canonical Model
         </button>
         {hasLoadedOverride ? (
           <button
             onClick={onClearLoadedCanonicalModel}
-            style={{
-              padding: '8px 10px',
-              borderRadius: 6,
-              border: '1px solid #cbd5e1',
-              background: '#fff',
-              cursor: 'pointer',
-            }}
+            style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer' }}
           >
-            Revert to graph-derived model
+            Revert to Graph-Derived Model
           </button>
         ) : null}
       </div>
-
       <input
         ref={fileInputRef}
         type="file"
@@ -143,13 +98,15 @@ export default function CanonicalModelFileControls({
         style={{ display: 'none' }}
         onChange={handleFileSelected}
       />
-
-      <div style={{ marginTop: 10, fontSize: 12, color: '#475569', lineHeight: 1.45 }}>
-        {hasLoadedOverride
-          ? 'A loaded canonical model currently overrides the graph-derived model for thin-runner execution.'
-          : 'The thin runner currently derives its canonical model from the active frontend graph state.'}
-      </div>
-
+      {hasLoadedOverride ? (
+        <div style={{ marginTop: 10, fontSize: 12, color: '#9a3412', lineHeight: 1.45 }}>
+          Loaded canonical model override active. New runs, current-result ownership, and stale/current lifecycle are now evaluated against the loaded canonical model, not the graph-derived model.
+        </div>
+      ) : (
+        <div style={{ marginTop: 10, fontSize: 12, color: '#475569', lineHeight: 1.45 }}>
+          Graph-derived canonical model active. New runs and result ownership currently follow the graph-derived canonical model.
+        </div>
+      )}
       {loadError ? <div style={{ marginTop: 10, fontSize: 12, color: '#991b1b' }}>{loadError}</div> : null}
     </div>
   );
