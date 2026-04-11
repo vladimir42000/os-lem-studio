@@ -55,9 +55,10 @@ export default function SimulationResultExportControls({
         background: '#f8fafc',
       }}
     >
-      <div style={{ fontSize: 12, color: '#475569' }}>
-        Simulation result export
-        {simulationResult ? ' ready from current result state.' : ' unavailable until a simulation has been run.'}
+      <div style={{ fontSize: 12, color: '#475569', lineHeight: 1.45 }}>
+        {simulationResult
+          ? 'Export the latest thin-runner simulation result exactly as it is currently held in result state.'
+          : 'Run the current canonical model first to make a simulation result available for export.'}
       </div>
       <button
         onClick={handleExportJson}
@@ -71,7 +72,7 @@ export default function SimulationResultExportControls({
           cursor: simulationResult ? 'pointer' : 'not-allowed',
         }}
       >
-        Export Results JSON
+        Export current results JSON
       </button>
     </div>
   );

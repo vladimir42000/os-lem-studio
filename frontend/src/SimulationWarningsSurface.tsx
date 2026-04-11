@@ -24,6 +24,9 @@ export default function SimulationWarningsSurface({ warnings }: SimulationWarnin
       <div style={{ fontSize: 13, fontWeight: 700, color: '#842029', marginBottom: 6 }}>
         Thin-runner warnings
       </div>
+      <div style={{ fontSize: 12, color: '#842029', lineHeight: 1.45, marginBottom: 6 }}>
+        These warnings belong to the current in-memory simulation result returned by the thin runner.
+      </div>
       <ul style={{ margin: 0, paddingLeft: 18, color: '#842029', fontSize: 12, lineHeight: 1.45 }}>
         {cleanedWarnings.map((warning, index) => (
           <li key={`${index}-${warning.slice(0, 24)}`}>{warning}</li>
