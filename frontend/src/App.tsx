@@ -25,10 +25,10 @@ import { assessGraphCompilability } from './graphCompilability';
 import type { CanvasEdge, CanvasNode } from './types';
 import SimulationResultExportControls from './SimulationResultExportControls';
 import RunnerStateSummary from './RunnerStateSummary';
+import { computeRunnerStateTruth } from './lifecycleTruth';
+import type { CanonicalModelSourceKind } from './lifecycleTruth';
 
 type TopologyId = 'closed_box' | 'bass_reflex' | 'transmission_line' | 'horn';
-
-type CanonicalModelSourceKind = 'graph-derived' | 'loaded-override';
 
 type GraphSnapshot = {
   nodes: ReactFlowNode[];
@@ -244,97 +244,6 @@ function stableSnapshotKey(value: unknown): string {
   }
 }
 
-
-function canonicalModelSourceLabelFor(kind: CanonicalModelSourceKind): string {
-  return kind === 'loaded-override'
-    ? 'Loaded override is authoritative'
-    : 'Graph-derived model is authoritative';
-}
-
-function canonicalModelSourceDetailFor(kind: CanonicalModelSourceKind): string {
-  return kind === 'loaded-override'
-    ? 'The loaded canonical model file is currently the active thin-runner source. New runs and fresh result ownership stay attached to this loaded override until you explicitly revert.'
-    : 'The working graph currently derives the active thin-runner source. New runs and fresh result ownership stay attached to the graph-derived canonical model unless you load an override.';
-}
-
-function resultOwnershipLabelFor({
-  hasResult,
-  resultSourceKind,
-  snapshotMatchesCurrent,
-  sourceMatchesCurrent,
-}: {
-  hasResult: boolean;
-  resultSourceKind: CanonicalModelSourceKind | null;
-  snapshotMatchesCurrent: boolean;
-  sourceMatchesCurrent: boolean;
-}): string {
-  if (!hasResult) {
-    return 'No result owner recorded yet';
-  }
-
-  if (resultSourceKind == null) {
-    return 'Unknown prior source';
-  }
-
-  const sourceOwner = resultSourceKind === 'loaded-override' ? 'loaded override source' : 'graph-derived source';
-
-  if (snapshotMatchesCurrent && sourceMatchesCurrent) {
-    return `Current ${sourceOwner}`;
-  }
-
-  const driftReasons: string[] = [];
-  if (!sourceMatchesCurrent) {
-    driftReasons.push('source changed');
-  }
-  if (!snapshotMatchesCurrent) {
-    driftReasons.push('snapshot changed');
-  }
-
-  return driftReasons.length > 0
-    ? `Earlier ${sourceOwner} (${driftReasons.join('; ')})`
-    : `Earlier ${sourceOwner}`;
-}
-
-function computeRunnerStateTruth({
-  simulationResult,
-  latestResultCanonicalModelSnapshotKey,
-  latestResultSourceKind,
-  currentCanonicalModelSnapshotKey,
-  currentCanonicalModelSourceKind,
-}: {
-  simulationResult: unknown;
-  latestResultCanonicalModelSnapshotKey: string | null;
-  latestResultSourceKind: CanonicalModelSourceKind | null;
-  currentCanonicalModelSnapshotKey: string;
-  currentCanonicalModelSourceKind: CanonicalModelSourceKind;
-}) {
-  const resultLifecycleIsAbsent = simulationResult == null;
-  const snapshotMatchesCurrent = !resultLifecycleIsAbsent && latestResultCanonicalModelSnapshotKey === currentCanonicalModelSnapshotKey;
-  const sourceMatchesCurrent = !resultLifecycleIsAbsent && latestResultSourceKind === currentCanonicalModelSourceKind;
-  const resultLifecycleIsCurrent = !resultLifecycleIsAbsent && snapshotMatchesCurrent && sourceMatchesCurrent;
-  const resultLifecycleIsStale = !resultLifecycleIsAbsent && (!snapshotMatchesCurrent || !sourceMatchesCurrent);
-  const rerunNeeded = resultLifecycleIsStale;
-
-  return {
-    resultLifecycleIsAbsent,
-    resultLifecycleIsCurrent,
-    resultLifecycleIsStale,
-    rerunNeeded,
-    canonicalModelSourceLabel: canonicalModelSourceLabelFor(currentCanonicalModelSourceKind),
-    canonicalModelSourceDetail: canonicalModelSourceDetailFor(currentCanonicalModelSourceKind),
-    resultStateLabel: resultLifecycleIsAbsent
-      ? 'No result yet'
-      : resultLifecycleIsCurrent
-        ? 'Current result available'
-        : 'Stale result — rerun needed',
-    resultOwnershipLabel: resultOwnershipLabelFor({
-      hasResult: !resultLifecycleIsAbsent,
-      resultSourceKind: latestResultSourceKind,
-      snapshotMatchesCurrent,
-      sourceMatchesCurrent,
-    }),
-  };
-}
 
 function pushSnapshotBounded(prev: HistoryState, snapshot: GraphSnapshot): HistoryState {
   const base = prev.snapshots.slice(0, prev.index + 1);
