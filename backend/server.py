@@ -9,16 +9,9 @@ from pydantic import BaseModel
 try:
     from os_lem.api import run_simulation
 except ImportError:
-    def run_simulation(m, f):
-        return type(
-            'Dummy',
-            (),
-            {
-                'series': {},
-                'zin_mag_ohm': [],
-                'frequencies_hz': [],
-            },
-        )()
+    # Keep the HTTP service available to explain the missing dependency, but
+    # never manufacture successful simulation results.
+    run_simulation = None
 
 
 app = FastAPI()
@@ -101,6 +94,11 @@ def _json_safe_dict_or_empty(value: Any) -> Dict[str, Any]:
 @app.post("/api/simulate")
 def perform_simulation(request: SimulationRequest):
     """Thin runner boundary: canonical model + frequencies in, numeric arrays + warnings out."""
+    if run_simulation is None:
+        raise HTTPException(
+            status_code=503,
+            detail="OS-LEM kernel is unavailable. Install it in the backend Python environment and restart the backend.",
+        )
     try:
         result = run_simulation(request.model_dict, request.frequencies_hz)
 
@@ -123,7 +121,9 @@ def perform_simulation(request: SimulationRequest):
                 response_data["series"][str(obs_id)] = _json_safe_list_or_empty(data)
 
         # Fail early here instead of inside FastAPI's encoder if anything non-JSON-safe remains.
-        json.dumps(response_data)
+        if not response_data["frequencies_hz"] or len(response_data["frequencies_hz"]) != len(request.frequencies_hz):
+            raise ValueError("Kernel returned an empty or incomplete frequency grid.")
+        json.dumps(response_data, allow_nan=False)
 
         return {"status": "success", "data": response_data}
 

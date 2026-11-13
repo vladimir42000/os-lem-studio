@@ -132,3 +132,36 @@ def test_simulate_normalizes_numpy_and_complex_values_to_json_safe_payload(monke
 
     encoded = json.dumps(body)
     assert isinstance(encoded, str)
+
+
+def test_missing_kernel_is_service_error(monkeypatch):
+    module, client = make_client()
+    monkeypatch.setattr(module, 'run_simulation', None)
+    response = client.post('/api/simulate', json=SIMULATION_REQUEST)
+    assert response.status_code == 503
+    assert 'kernel is unavailable' in response.json()['detail']
+
+
+def test_kernel_exception_never_becomes_success(monkeypatch):
+    module, client = make_client()
+    def fail(*args):
+        raise ValueError('Invalid acoustic model')
+    monkeypatch.setattr(module, 'run_simulation', fail)
+    response = client.post('/api/simulate', json=SIMULATION_REQUEST)
+    assert response.status_code == 500
+    assert response.json()['detail'] == 'Invalid acoustic model'
+
+
+def test_empty_kernel_result_never_becomes_success(monkeypatch):
+    module, client = make_client()
+    monkeypatch.setattr(module, 'run_simulation', lambda *args: SimpleNamespace(frequencies_hz=[], series={}))
+    response = client.post('/api/simulate', json=SIMULATION_REQUEST)
+    assert response.status_code == 500
+    assert 'frequency grid' in response.json()['detail']
+
+
+def test_nonfinite_kernel_result_is_explicit_error(monkeypatch):
+    module, client = make_client()
+    monkeypatch.setattr(module, 'run_simulation', lambda *args: SimpleNamespace(frequencies_hz=[20,100], series={'spl':[float('nan'),80]}))
+    response = client.post('/api/simulate', json=SIMULATION_REQUEST)
+    assert response.status_code == 500

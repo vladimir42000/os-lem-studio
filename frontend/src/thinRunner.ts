@@ -19,7 +19,9 @@ export async function runSimulationThin({
   backendUrl = 'http://localhost:8000/api/simulate',
   fetchImpl = fetch,
 }: ThinRunnerOptions): Promise<ThinRunnerResponse> {
-  const response = await fetchImpl(backendUrl, {
+  let response: Response;
+  try {
+    response = await fetchImpl(backendUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -27,17 +29,30 @@ export async function runSimulationThin({
       frequencies_hz: frequenciesHz,
       experimental_mode: false,
     }),
-  });
+    });
+  } catch {
+    throw new Error('Cannot reach the simulation backend. Check that it is running on port 8000.');
+  }
 
-  const payload = await response.json();
+  let payload;
+  try {
+    payload = await response.json();
+  } catch {
+    throw new Error(`Simulation backend returned an invalid response (HTTP ${response.status}).`);
+  }
 
   if (!response.ok) {
-    throw new Error(`Thin runner backend error: ${JSON.stringify(payload)}`);
+    throw new Error(typeof payload?.detail === 'string' ? payload.detail : `Simulation failed (HTTP ${response.status}).`);
   }
 
   if (payload?.status !== 'success' || !payload?.data) {
     throw new Error(`Thin runner unexpected response: ${JSON.stringify(payload)}`);
   }
 
+  const grid = payload.data.frequencies_hz;
+  if (!Array.isArray(grid) || grid.length === 0 || grid.length !== frequenciesHz.length ||
+      !grid.every((value: unknown, index: number) => typeof value === 'number' && Number.isFinite(value) && value === frequenciesHz[index])) {
+    throw new Error('Simulation backend returned an empty or mismatched frequency grid.');
+  }
   return payload.data as ThinRunnerResponse;
 }
