@@ -161,7 +161,7 @@ export default function ChartPanel({ simulationData }: ChartPanelProps) {
       nameLocation: 'middle',
       nameGap: 34,
       axisLabel: {
-        formatter: (value: string) => `${Number(value)}`,
+        formatter: (value: string) => Number(value) >= 1000 ? `${(Number(value) / 1000).toFixed(1)}k` : `${Math.round(Number(value))}`,
       },
     },
     yAxis: {
@@ -245,7 +245,7 @@ export default function ChartPanel({ simulationData }: ChartPanelProps) {
           {selectedObservable?.reason ?? 'No numeric data is available for the selected observable.'}
         </div>
       ) : (
-        <ReactECharts option={option} style={{ height: '100%', width: '100%' }} />
+        <ReactECharts option={option} style={{ height: 'max(360px, 55vh)', width: '100%' }} />
       )}
     </div>
   );

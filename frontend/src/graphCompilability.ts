@@ -52,10 +52,6 @@ function normalizeSnapshot(snapshot: GraphSnapshot | null | undefined): string {
     .map((node) => ({
       id: String(node.id),
       type: String(node.type || 'default'),
-      position: {
-        x: Number(node.position && node.position.x ? node.position.x : 0),
-        y: Number(node.position && node.position.y ? node.position.y : 0),
-      },
       data: node.data || {},
     }))
     .sort((a, b) => a.id.localeCompare(b.id));

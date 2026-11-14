@@ -14,10 +14,8 @@ export default function CanonicalModelInspection({ canonicalModel }: CanonicalMo
   return (
     <div
       style={{
-        position: 'fixed',
-        right: 16,
-        bottom: 16,
-        width: 360,
+        position: 'relative',
+        width: '100%',
         maxWidth: 'calc(100vw - 32px)',
         zIndex: 40,
         boxShadow: '0 10px 25px rgba(15, 23, 42, 0.18)',

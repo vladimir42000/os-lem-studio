@@ -66,3 +66,30 @@ button:focus-visible {
     background-color: #f9f9f9;
   }
 }
+
+/* Workbench layout: document scrolling, no percentage-height chart squeezing. */
+:root { color-scheme: light; color: #172b45; background: #f4f7fb; }
+body { display: block; min-width: 320px; }
+#root { width: 100%; margin: 0; padding: 0; text-align: left; }
+* { box-sizing: border-box; }
+button { background: #f8fafc; color: #172b45; }
+button:disabled { cursor: not-allowed; opacity: .65; }
+[hidden] { display: none !important; }
+.studio-app { min-height: 100vh; width: 100%; }
+.workspace-tabs { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px 16px; border-bottom: 1px solid #dbe3ef; background: white; }
+.workspace-tabs button[aria-pressed=true] { background: #174f87; color: white; }
+.workspace-tabs span { margin-left: auto; font-size: 13px; }
+.run-error { padding: 12px 16px; background: #fff0ef; color: #991b1b; }
+.model-workspace { display: grid; grid-template-columns: minmax(0, 1fr) 340px; border-bottom: 1px solid #dbe3ef; }
+.model-canvas { height: 520px; min-width: 0; position: relative; }
+.model-inspector { padding: 16px; background: white; border-left: 1px solid #dbe3ef; }
+.results-workspace { padding: 12px; background: white; }
+.results-chart { min-height: 460px; width: 100%; }
+.files-workspace { max-width: 1100px; padding: 16px; margin: auto; }
+summary { cursor: pointer; font-weight: 600; }
+@media (max-width: 760px) {
+  .model-workspace { grid-template-columns: 1fr; }
+  .model-canvas { height: 360px; }
+  .workspace-tabs span { width: 100%; margin-left: 0; }
+  .results-workspace { padding: 4px; }
+}

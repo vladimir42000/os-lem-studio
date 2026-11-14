@@ -34,10 +34,13 @@ try {
   // Discover the actual run label from the rendered header if copy evolves.
   const runButton=page.locator('button').filter({hasText:/^Run /}).first();
   await runButton.click();
-  await page.getByText('Current result available',{exact:true}).waitFor();
+  await page.getByRole('status').filter({hasText:'Current result available'}).waitFor();
   const observable=page.getByLabel('Current observable');
   assert.equal(await observable.inputValue(),'spl','Closed Box must display its front SPL by default');
   assert(await page.locator('canvas').count()>0,'Chart canvas missing');
+  const bounds=await page.locator('.results-chart').boundingBox();
+  assert(bounds && bounds.height>=360,'Results chart must not collapse');
+  await page.getByRole('button',{name:'Files & details',exact:true}).click();
   const downloadPromise=page.waitForEvent('download');
   await page.getByRole('button',{name:'Save Canonical Model',exact:true}).click();
   const download=await downloadPromise; const filename=join(work,'model.json');
@@ -46,16 +49,18 @@ try {
   assert(saved.driver && saved.elements.length>0);
   await page.locator('input[type=file]').setInputFiles(filename);
   await page.getByRole('button',{name:'Run Loaded Canonical Model',exact:true}).click();
+  await page.getByRole('status').filter({hasText:'Current result available'}).waitFor();
+  await page.getByRole('button',{name:'Files & details',exact:true}).click();
   await page.getByText('Current loaded override',{exact:true}).waitFor();
   await page.locator('input[type=file]').setInputFiles({name:'invalid.json',mimeType:'application/json',buffer:Buffer.from('{broken')});
   assert((await page.locator('body').innerText()).includes('JSON'));
   await page.getByRole('button',{name:'Revert Active Source to Graph-Derived Model'}).click();
-  await page.getByText('Stale result — rerun needed',{exact:true}).waitFor();
+  await page.getByRole('status').filter({hasText:'Stale result'}).waitFor();
   // Holding a request open must prevent a second run, even on a rapid click.
   const before=requests;
   await runButton.click();
   assert(await page.getByRole('button',{name:'Simulating…',exact:true}).isDisabled());
-  await page.getByText('Current result available',{exact:true}).waitFor();
+  await page.getByRole('status').filter({hasText:'Current result available'}).waitFor();
   await runButton.waitFor({state:'visible'});
   assert.equal(requests,before+1);
   // Failed rerun exposes an error and releases the run control.

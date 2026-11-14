@@ -96,3 +96,28 @@ CHROMIUM_PATH, PLAYWRIGHT_MODULE_PATH (module entry path).
 
 Next action: run and repair this browser test in a compatible environment,
 then review dependency vulnerabilities and supported-runtime installation.
+
+## Chromebook layout repair after user screenshots
+
+User evidence showed 150 result points but a chart compressed into a bottom
+strip under file controls, status text and the graph editor. Exported canonical
+JSON is a Closed Box with a 50-litre chamber and front-SPL/impedance observations.
+This was a layout defect; successful numerical tests did not validate usability.
+
+The workspace now has Model, Results, and Files & details views. Successful
+simulation opens Results and scrolls to the top. Results reserve chart height
+(minimum 360px for ECharts) independently of editor/file/status content. Technical
+model inspection is inline within Files & details instead of a fixed overlay.
+The duplicated element inspector is collapsed under Advanced element editor.
+The model view stacks canvas and inspector on narrow screens. Frequency labels
+are rounded instead of displaying long floating-point strings.
+
+Node positions no longer participate in the seed-equivalence comparison:
+dragging or selecting nodes does not change acoustic semantics. Parameter and
+connection changes remain subject to the existing runtime gate. A regression
+script verifies these distinctions: node scripts/test-graph-layout.mjs.
+
+Validation: production build, eight chart-selection cases and five graph-layout
+cases passed. Browser harness updated for navigation and minimum chart geometry,
+but live Chromium execution remains blocked in this workspace; responsive visual
+behavior needs confirmation on the Chromebook. No final-release claim.

@@ -431,6 +431,7 @@ function safeAssessGraphCompilability(args: {
 const initialSeedGraph = seedTemplateGraph('closed_box');
 
 export default function App() {
+  const [activeView, setActiveView] = useState<'model' | 'results' | 'files'>('model');
   const [selectedTopology, setSelectedTopology] = useState<TopologyId>('closed_box');
   const [seedGraph, setSeedGraph] = useState<GraphSnapshot>(() => cloneGraphSnapshot(initialSeedGraph));
   const [nodes, setNodes] = useState<ReactFlowNode[]>(() => cloneGraphSnapshot(initialSeedGraph).nodes);
@@ -757,6 +758,8 @@ export default function App() {
         frequenciesHz,
       });
       setSimulationResult(result);
+      setActiveView('results');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       // lifecycle marker: latest result ownership snapshot
       setLatestResultCanonicalModelSnapshotKey(runCanonicalModelSnapshotKey);
       setLatestResultSourceKind(currentCanonicalModelSourceKind);
@@ -897,7 +900,7 @@ export default function App() {
   };
 
   return (
-    <div style={{ width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', margin: 0, padding: 0 }}>
+    <div className="studio-app">
       <div
         style={{
           padding: '12px 15px',
@@ -911,9 +914,9 @@ export default function App() {
         }}
       >
         <div>
-          <div style={{ fontWeight: 700 }}>os-lem Studio — Canonical Model Thin Runner</div>
+          <div style={{ fontWeight: 700 }}>OS-LEM Studio</div>
           <div style={{ fontSize: 12, opacity: 0.85 }}>
-            Canonical model is the primary truth. Thin-runner results are owned by a canonical model snapshot.
+            Loudspeaker simulation • development preview
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -957,7 +960,17 @@ export default function App() {
         </div>
       </div>
 
-      <div style={{ padding: '12px 15px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
+      <nav className="workspace-tabs" aria-label="Workspace views">
+        {(['model', 'results', 'files'] as const).map((view) => (
+          <button key={view} aria-pressed={activeView === view} onClick={() => setActiveView(view)}>
+            {view === 'model' ? 'Model' : view === 'results' ? 'Results' : 'Files & details'}
+          </button>
+        ))}
+        <span role="status">{isSimulating ? 'Calculating…' : resultStateLabel}</span>
+      </nav>
+      {runError ? <div role="alert" className="run-error">{runError}</div> : null}
+
+      <div hidden={activeView !== 'model'} style={{ padding: '12px 15px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
           <TopologyCard
             title="Closed Box"
@@ -994,29 +1007,12 @@ export default function App() {
           <span style={{ fontSize: 13, color: '#475569' }}>{anchorWorkflowCopy.title}</span>
         </div>
         <div style={{ marginTop: 6, fontSize: 13, color: '#475569', lineHeight: 1.45 }}>{anchorWorkflowCopy.detail}</div>
-        {runError ? <div style={{ marginTop: 8, fontSize: 12, color: '#991b1b' }}>{runError}</div> : null}
 
-        <CanonicalModelFileControls
-          canonicalModel={canonicalModel}
-          onLoadCanonicalModel={handleLoadCanonicalModel}
-          onLoadCanonicalModelError={handleLoadCanonicalModelError}
-          onClearLoadedCanonicalModel={handleClearLoadedCanonicalModel}
-          hasLoadedOverride={loadedCanonicalModelOverride !== null}
-          loadError={loadError}
-        />
 
-        <RunnerStateSummary
-          canonicalModelSourceLabel={canonicalModelSourceLabel}
-          canonicalModelSourceDetail={canonicalModelSourceDetail}
-          resultStateLabel={resultStateLabel}
-          resultOwnershipLabel={resultOwnershipLabel}
-          warningCount={currentWarnings.length}
-          rerunNeeded={rerunNeeded}
-        />
       </div>
 
-      <div style={{ display: 'flex', height: '52%', borderBottom: '1px solid #cbd5e1' }}>
-        <div style={{ flex: 1, position: 'relative' }}>
+      <div hidden={activeView !== 'model'} className="model-workspace">
+        <div className="model-canvas">
           <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button
               onClick={handleAddChild}
@@ -1052,20 +1048,20 @@ export default function App() {
           </ReactFlow>
         </div>
 
-        <div style={{ width: 360, borderLeft: '1px solid #e2e8f0', padding: 16, overflowY: 'auto', background: '#fff' }}>
+        <div className="model-inspector">
           {renderTopologyEditor()}
 
-          <div style={{ marginTop: 18, borderTop: '1px solid #e2e8f0', paddingTop: 16 }}>
-            <div style={{ fontWeight: 700, marginBottom: 8 }}>Graph editor surface</div>
+          <details style={{ marginTop: 18, borderTop: '1px solid #e2e8f0', paddingTop: 16 }}>
+            <summary>Advanced element editor</summary>
             <div style={{ fontSize: 12, color: '#475569', lineHeight: 1.5, marginBottom: 10 }}>
               The graph is the working object. Structural edits affect the working graph only, while Reset to Seed restores the stored template seed snapshot.
             </div>
             <Inspector selectedNode={selectedCanvasNode} updateNodeData={updateNodeData} />
-          </div>
+          </details>
         </div>
       </div>
 
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#fff' }}>
+      {activeView === 'results' && <section className="results-workspace" aria-label="Simulation results">
         <SimulationResultExportControls
           simulationResult={simulationResult}
           isStale={resultLifecycleIsStale}
@@ -1074,12 +1070,31 @@ export default function App() {
         <div style={{ padding: '10px 12px 0 12px' }}>
           <SimulationWarningsSurface warnings={currentWarnings} isStale={resultLifecycleIsStale} />
         </div>
-        <div style={{ flex: 1 }}>
+        <div className="results-chart">
           <ChartPanel simulationData={simulationResult} />
         </div>
-      </div>
+      </section>}
 
-      <CanonicalModelInspection canonicalModel={canonicalModel} />
+      <section hidden={activeView !== 'files'} className="files-workspace">
+        <CanonicalModelFileControls
+          canonicalModel={canonicalModel}
+          onLoadCanonicalModel={handleLoadCanonicalModel}
+          onLoadCanonicalModelError={handleLoadCanonicalModelError}
+          onClearLoadedCanonicalModel={handleClearLoadedCanonicalModel}
+          hasLoadedOverride={loadedCanonicalModelOverride !== null}
+          loadError={loadError}
+        />
+
+        <RunnerStateSummary
+          canonicalModelSourceLabel={canonicalModelSourceLabel}
+          canonicalModelSourceDetail={canonicalModelSourceDetail}
+          resultStateLabel={resultStateLabel}
+          resultOwnershipLabel={resultOwnershipLabel}
+          warningCount={currentWarnings.length}
+          rerunNeeded={rerunNeeded}
+        />
+        <CanonicalModelInspection canonicalModel={canonicalModel} />
+      </section>
     </div>
   );
 }
