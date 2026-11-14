@@ -121,3 +121,40 @@ Validation: production build, eight chart-selection cases and five graph-layout
 cases passed. Browser harness updated for navigation and minimum chart geometry,
 but live Chromium execution remains blocked in this workspace; responsive visual
 behavior needs confirmation on the Chromebook. No final-release claim.
+
+## Manual confirmation and editable Closed Box checkpoint
+
+The user confirmed the redesigned Results view on the Chromebook and provided
+SPL, impedance and phase screenshots after saving, loading and rerunning the
+model. Curves appeared unchanged. This is manual visual workflow evidence, not
+numerical equality or acoustic accuracy certification.
+
+Closed Box now accepts positive finite numeric edits to the existing translator
+parameters: driver Re, Le, Sd, Fs, Qes, Qms, Vas; chamber Vb/volume_l; radiator
+Sd/area_cm2. Labels may change. Other fields, driver model, IDs and connections
+remain seed-bound. Exact-seed metadata remains false after parameter changes.
+The editor exposes Fs/Qes/Qms/Vas, and a loaded-file banner explains which model
+will run, offering an explicit return to graph editing. Primary parameter fields
+are disabled while the loaded model is active.
+
+Charts now use a numeric logarithmic frequency axis and [frequency, ordinate]
+pairs, with sparse labels and no spline smoothing between calculated points.
+
+Validation: expanded graph eligibility regression checks, eight chart-selection
+checks, seven backend tests, actual HTTP volume-change/save-load workflow and
+production build passed. Browser script updated for editing and rerunning but
+still requires execution in a compatible browser environment.
+
+Dependency review: npm audit initially reported 19 findings (1 low, 11 moderate,
+7 high). Non-forced npm audit fix updated the lockfile within existing manifest
+ranges: 1 package added, 49 changed; remaining 9 findings (8 moderate, 1 high).
+Remaining paths include Vite/esbuild and minimatch through typescript-eslint.
+The npm-suggested forced Vite upgrade crosses a major version and is deferred
+for a dedicated compatibility check. No security-clean release claim is made.
+All installed lockfile package Node engine ranges accept Node 20.19.2; execution
+was tested on Node 24.22.1, not the Chromebook runtime. Bundle-size and Python
+test-client deprecation warnings remain open.
+
+Update instructions: pull the Studio branch, run npm --prefix frontend ci,
+restart Vite and refresh the page. Kernel/backend changes are not required for
+this checkpoint. Next: finish dependency remediation and browser/runtime checks.

@@ -12,7 +12,14 @@ assert.equal(assess(moved),'compilable_anchor');
 moved.nodes[0].selected=true; moved.nodes[0].width=200;
 assert.equal(assess(moved),'compilable_anchor');
 const changed=structuredClone(seed);changed.nodes[1].data.Vb=99;
+assert.equal(assess(changed),'compilable_anchor');
+for (const invalid of [0,-1,NaN,Infinity,'50']) {
+  changed.nodes[1].data.Vb=invalid;
+  assert.notEqual(assess(changed),'compilable_anchor');
+}
+changed.nodes[1].data.Vb=50;
+changed.nodes[0].data.model='em_explicit';
 assert.notEqual(assess(changed),'compilable_anchor');
 const disconnected=structuredClone(seed);disconnected.edges.pop();
 assert.notEqual(assess(disconnected),'compilable_anchor');
-console.log('PASS: graph movement/selection preserve run eligibility; model and connection changes remain gated.');
+console.log('PASS: graph movement/selection preserve run eligibility; valid parameter edits run; invalid values, driver-model changes and connection changes remain gated.');

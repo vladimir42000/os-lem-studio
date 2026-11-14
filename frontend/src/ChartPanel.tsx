@@ -150,17 +150,24 @@ export default function ChartPanel({ simulationData }: ChartPanelProps) {
     tooltip: {
       trigger: 'axis',
       axisPointer: { type: 'cross' },
-      valueFormatter: (value: number) =>
-        Number.isFinite(value) ? `${value.toFixed(3)} ${selectedObservable?.unit ?? ''}`.trim() : '',
+      valueFormatter: (value: number | number[]) => {
+        const ordinate = Array.isArray(value) ? value[1] : value;
+        return Number.isFinite(ordinate) ? `${ordinate.toFixed(3)} ${selectedObservable?.unit ?? ''}`.trim() : '';
+      },
     },
-    grid: { left: '6%', right: '4%', top: 36, bottom: 60 },
+    grid: { left: 65, right: 28, top: 40, bottom: 90 },
     xAxis: {
-      type: 'category',
-      data: xValues,
+      type: 'log',
+      logBase: 10,
+      min: xValues[0],
+      max: xValues[xValues.length - 1],
+      minorTick: { show: true },
+      minorSplitLine: { show: true },
       name: 'Frequency (Hz)',
       nameLocation: 'middle',
       nameGap: 34,
       axisLabel: {
+        hideOverlap: true,
         formatter: (value: string) => Number(value) >= 1000 ? `${(Number(value) / 1000).toFixed(1)}k` : `${Math.round(Number(value))}`,
       },
     },
@@ -179,9 +186,9 @@ export default function ChartPanel({ simulationData }: ChartPanelProps) {
       {
         name: selectedObservable?.label ?? 'Observable',
         type: 'line',
-        smooth: true,
+        smooth: false,
         showSymbol: false,
-        data: seriesValues,
+        data: seriesValues.map((value, index) => [xValues[index], value]),
         lineStyle: { width: 2 },
       },
     ],

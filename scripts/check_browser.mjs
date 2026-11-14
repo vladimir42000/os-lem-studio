@@ -41,6 +41,13 @@ try {
   const bounds=await page.locator('.results-chart').boundingBox();
   assert(bounds && bounds.height>=360,'Results chart must not collapse');
   await page.getByRole('button',{name:'Files & details',exact:true}).click();
+  await page.getByRole('button',{name:'Model',exact:true}).click();
+  await page.getByLabel('Volume liters',{exact:true}).fill('36');
+  await page.getByRole('status').filter({hasText:'Stale result'}).waitFor();
+  assert(await runButton.isEnabled());
+  await runButton.click();
+  await page.getByRole('status').filter({hasText:'Current result available'}).waitFor();
+  await page.getByRole('button',{name:'Files & details',exact:true}).click();
   const downloadPromise=page.waitForEvent('download');
   await page.getByRole('button',{name:'Save Canonical Model',exact:true}).click();
   const download=await downloadPromise; const filename=join(work,'model.json');

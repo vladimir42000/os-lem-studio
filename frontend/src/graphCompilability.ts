@@ -69,6 +69,33 @@ function normalizeSnapshot(snapshot: GraphSnapshot | null | undefined): string {
   return JSON.stringify({ nodes, edges });
 }
 
+// Only numeric parameters already consumed by the Closed Box translator may
+// vary. Keep models, node IDs, connections and unsupported fields seed-bound.
+const EDITABLE_PARAMETERS: Record<string, string[]> = {
+  driver: ['Re', 'Le', 'Sd', 'Fs', 'Qes', 'Qms', 'Vas'],
+  volume: ['Vb', 'volume_l'],
+  radiator: ['Sd', 'area_cm2'],
+};
+
+function matchesEditableClosedBox(seed: GraphSnapshot | null, current: GraphSnapshot): boolean {
+  if (!seed) return false;
+  for (const node of current.nodes) {
+    const data = node.data || {};
+    for (const key of EDITABLE_PARAMETERS[data.type] || []) {
+      if (key in data && (typeof data[key] !== 'number' || !Number.isFinite(data[key]) || data[key] <= 0)) return false;
+    }
+  }
+  const withoutParameters = (graph: GraphSnapshot): GraphSnapshot => ({
+    ...graph,
+    nodes: graph.nodes.map(node => {
+      const data = { ...node.data };
+      for (const key of [...(EDITABLE_PARAMETERS[data.type] || []), 'label']) delete data[key];
+      return { ...node, data };
+    }),
+  });
+  return normalizeSnapshot(withoutParameters(seed)) === normalizeSnapshot(withoutParameters(current));
+}
+
 function normalizeTopology(topology: TopologyId | string | null | undefined): TopologyId {
   const raw = String(topology || 'closed_box');
   if (raw === 'bass_reflex' || raw === 'transmission_line' || raw === 'horn') {
@@ -130,13 +157,13 @@ function assessFromNormalizedArgs(args: AssessArgsObject): GraphCompilabilityAss
   const matchedPattern = primitiveAssessment.matchedPattern;
 
   if (matchedPattern?.id === CLOSED_BOX_ANCHOR_PATTERN.id) {
-    if (topology === 'closed_box' && exactSeedMatch) {
+    if (topology === 'closed_box' && matchesEditableClosedBox(seedGraph, currentGraph)) {
       return buildAssessment(
         'compilable_anchor',
-        ['matches validated Closed Box anchor'],
+        ['supported Closed Box topology with valid parameters'],
         true,
         primitiveAssessment,
-        true,
+        exactSeedMatch,
       );
     }
 

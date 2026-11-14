@@ -354,9 +354,9 @@ function formatGraphAssessmentStatus(status: string): string {
 function getAnchorWorkflowCopy(topology: TopologyId, status: string, reasons: string[]) {
   if (topology === 'closed_box' && status === 'compilable_anchor') {
     return {
-      title: 'Validated Closed Box anchor',
-      detail: 'The graph matches the exact validated Closed Box seed and remains the truthful runnable anchor workflow.',
-      runLabel: 'Run Closed Box Anchor',
+      title: 'Closed Box simulation',
+      detail: 'Edit driver or enclosure parameters, then run again. Structural changes remain restricted.',
+      runLabel: 'Run simulation',
       resetLabel: 'Reset to exact Closed Box anchor',
     };
   }
@@ -777,9 +777,9 @@ export default function App() {
       return (
         <>
           <div style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>Closed Box Seed Editor</div>
+            <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>Closed Box parameters</div>
             <div style={{ fontSize: 13, color: '#475569', lineHeight: 1.5 }}>
-              This seed remains the truthful runnable anchor only while the graph still matches the exact validated pattern.
+              Change the parameters below, then run to update the curves.
             </div>
           </div>
 
@@ -802,6 +802,13 @@ export default function App() {
               suffix="mH"
               onChange={(value) => patchNodeData(driverNode.id, { Le: parsePositiveNumber(value, 1.4) })}
             />
+            {[
+              ['Fs', 'Hz', 34], ['Qes', '', 0.42], ['Qms', '', 4.1], ['Vas', 'liters', 55],
+            ].map(([key, unit, fallback]) => (
+              <LabeledInput key={String(key)} label={String(key)} suffix={String(unit)}
+                value={driverNode.data[String(key)] ?? fallback}
+                onChange={(value) => patchNodeData(driverNode.id, { [String(key)]: parsePositiveNumber(value, Number(fallback)) })} />
+            ))}
             <LabeledInput
               label="Sd"
               value={driverNode.data.Sd ?? 531}
@@ -975,7 +982,7 @@ export default function App() {
           <TopologyCard
             title="Closed Box"
             subtitle="Validated runnable anchor"
-            status="Exact seed match remains runnable"
+            status="Editable driver and enclosure parameters"
             active={selectedTopology === 'closed_box'}
             onClick={() => handleTopologySelect('closed_box')}
           />
@@ -1011,6 +1018,12 @@ export default function App() {
 
       </div>
 
+      {activeView === 'model' && loadedCanonicalModelOverride && (
+        <div className="run-error">
+          Runs currently use the loaded file. Switch to the graph model before editing these parameters.
+          <button onClick={handleClearLoadedCanonicalModel}>Use graph model for editing</button>
+        </div>
+      )}
       <div hidden={activeView !== 'model'} className="model-workspace">
         <div className="model-canvas">
           <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -1049,7 +1062,9 @@ export default function App() {
         </div>
 
         <div className="model-inspector">
+          <fieldset disabled={loadedCanonicalModelOverride !== null} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
           {renderTopologyEditor()}
+          </fieldset>
 
           <details style={{ marginTop: 18, borderTop: '1px solid #e2e8f0', paddingTop: 16 }}>
             <summary>Advanced element editor</summary>
