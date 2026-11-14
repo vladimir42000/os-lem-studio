@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+const require = createRequire(new URL('../frontend/package.json', import.meta.url));
+const ts = require('typescript');
+const source=readFileSync(new URL('../frontend/src/chartSeries.ts',import.meta.url),'utf8');
+const {outputText}=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ES2022}});
+const {selectSplSeries}=await import(`data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`);
+assert.deepEqual(selectSplSeries({spl_front:[80,81]},2),[80,81]);
+assert.deepEqual(selectSplSeries({spl_sum:[],spl_front:[80,81]},2),[80,81]);
+assert.deepEqual(selectSplSeries({spl_sum:[90,91],spl_front:[80,81]},2),[90,91]);
+assert.deepEqual(selectSplSeries({spl:[70,71]},2),[70,71]);
+assert.deepEqual(selectSplSeries({spl_front:[80,NaN]},2),[]);
+assert.deepEqual(selectSplSeries({spl_front:[80]},2),[]);
+assert.deepEqual(selectSplSeries({spl_front:[80,81]},0),[]);
+assert.deepEqual(selectSplSeries({},2),[]);
+console.log('PASS: 8 SPL selection, fallback, and frequency-alignment cases.');

@@ -59,3 +59,40 @@ installation compatibility remain open. The final release is not ready.
 
 User authorization supersedes the older manual patch-archive delivery process;
 this checkpoint is published directly to a development branch.
+
+## Follow-up: SPL selection and request guard
+
+The Closed Box chart previously used `[] || frontSPL`, which always selected
+an empty array when summed SPL was absent. `chartSeries.ts` now selects the
+first complete finite series in the existing priority order: summed, front,
+generic SPL. Invalid/mismatched arrays are rejected rather than shortened and
+shifted against the frequency axis. Eight focused cases pass via:
+
+```sh
+node scripts/test-chart-series.mjs
+```
+
+App now guards overlapping executions with a synchronous ref and displays a
+disabled `Simulating…` button. A finally block releases the guard after success
+or failure. The captured model snapshot remains the result owner.
+
+Follow-up verification: frontend production build passed; all seven backend
+tests passed; real-kernel HTTP workflow passed (kernel d9f6923).
+
+### Browser validation remains blocked
+
+`scripts/check_browser.mjs` was added for live Chromium testing of reset/run,
+SPL chart selection, model download/upload, invalid JSON, source changes,
+request locking and service errors. It has NOT passed here: Chromium fails
+before page creation with `socket() failed: Operation not permitted` in the
+execution workspace. Thus no visual or browser-interaction completion is
+claimed. The request guard is build-checked but still awaits browser coverage.
+
+The script requires Playwright, an installed Chromium, backend Python
+requirements and frontend node_modules. It starts local services on ports
+18000/18517 and routes browser simulation requests to that isolated backend.
+Use only while those ports are free. Optional environment variables: PYTHON,
+CHROMIUM_PATH, PLAYWRIGHT_MODULE_PATH (module entry path).
+
+Next action: run and repair this browser test in a compatible environment,
+then review dependency vulnerabilities and supported-runtime installation.

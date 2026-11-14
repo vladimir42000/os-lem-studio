@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import ReactFlow, {
   Background,
   Controls,
@@ -446,6 +446,8 @@ export default function App() {
   const [loadedCanonicalModelOverride, setLoadedCanonicalModelOverride] = useState<Record<string, unknown> | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
+  const [isSimulating, setIsSimulating] = useState(false);
+  const simulationInFlight = useRef(false);
 
   const currentGraph = useMemo<GraphSnapshot>(() => cloneGraphSnapshot({ nodes, edges }), [nodes, edges]);
   const canvasNodes = useMemo(() => nodes.map(toCanvasNode), [nodes]);
@@ -736,6 +738,7 @@ export default function App() {
   }, []);
 
   const handleRunSimulationThin = useCallback(async () => {
+    if (simulationInFlight.current) return;
     if (!canRunSimulation) {
       setRunError(graphAssessment.reasons?.[0] ?? 'Simulation is currently gated by compiler-boundary truth.');
       return;
@@ -745,6 +748,8 @@ export default function App() {
     const runCanonicalModel = canonicalModel;
     const runCanonicalModelSnapshotKey = stableSnapshotKey(runCanonicalModel);
 
+    simulationInFlight.current = true;
+    setIsSimulating(true);
     try {
       setRunError(null);
       const result = await runSimulationThin({
@@ -758,6 +763,9 @@ export default function App() {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Thin runner failed.';
       setRunError(message);
+    } finally {
+      simulationInFlight.current = false;
+      setIsSimulating(false);
     }
   }, [canRunSimulation, canonicalModel, currentCanonicalModelSourceKind, graphAssessment.reasons]);
 
@@ -932,7 +940,8 @@ export default function App() {
           </button>
           <button
             onClick={handleRunSimulationThin}
-            disabled={!canRunSimulation}
+            disabled={!canRunSimulation || isSimulating}
+            aria-busy={isSimulating}
             style={{
               padding: '7px 14px',
               cursor: canRunSimulation ? 'pointer' : 'not-allowed',
@@ -943,7 +952,7 @@ export default function App() {
             }}
             title={canRunSimulation ? 'Thin runner executes the current canonical model.' : anchorWorkflowCopy.detail}
           >
-            {runButtonLabel}
+            {isSimulating ? 'Simulating…' : runButtonLabel}
           </button>
         </div>
       </div>

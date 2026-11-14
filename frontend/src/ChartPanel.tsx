@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import ReactECharts from 'echarts-for-react';
+import { selectSplSeries } from './chartSeries';
 
 type ObservableId = 'spl' | 'impedance' | 'phase' | 'displacement' | 'group_delay';
 
@@ -43,11 +44,7 @@ function buildObservableOptions(simulationData: any): ObservableOption[] {
   const series = simulationData?.series ?? {};
   const properties = simulationData?.properties ?? {};
 
-  const splValues =
-    toNumericArray(series.spl_sum) ||
-    toNumericArray(series.spl_front) ||
-    toNumericArray(series.spl) ||
-    [];
+  const splValues = selectSplSeries(series, simulationData?.frequencies_hz?.length ?? 0);
 
   const impedanceValues = toNumericArray(properties.zin_mag_ohm);
   const phaseValues = computePhaseDegrees(properties.zin_complex_ohm);
