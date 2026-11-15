@@ -1,4 +1,4 @@
-# Bass Reflex and uniform TL comparison cases
+# Bass Reflex and transmission-line comparison cases
 
 These are reproducible Studio defaults, not externally validated loudspeaker designs.
 Load either JSON through **Files & details → Load Canonical Model**, then run.
@@ -56,10 +56,65 @@ curve is currently shown; the phase dropdown is electrical impedance phase.
 - Driver rear feeds the line entrance directly; no additional rear chamber.
 - Uniform area: 132 cm² (circular equivalent diameter 12.9638 cm).
 - Length: 160 cm. Mouth area equals line area.
-- Lossless 1D propagation, 16 constant-area segments, open radiating mouth.
-- No stuffing, taper, offset driver, bends, folds, leakage or wall vibration.
+- Lossless 1D propagation, 64 constant-area segments, open radiating mouth.
+- This baseline uses zero attenuation, equal end areas and zero driver offset.
+  The additional cases below exercise the new controls. Bends, folds, leakage
+  and wall vibration remain unmodeled.
 - Narrow peaks/notches are expected in this ideal unstuffed model. Do not treat
   them as predictions for a damped real enclosure.
+
+## Taper, offset and stuffing-attenuation cases
+
+All cases retain the driver, 160 cm total length, voltage and observation settings
+above. Each has a matching JSON model and CSV of 600 points over 10–1000 Hz.
+
+| File stem | Closed-end area (cm²) | Mouth area (cm²) | Driver offset (cm) | Attenuation (Np/m) |
+|---|---:|---:|---:|---:|
+| transmission_line | 132 | 132 | 0 | 0 |
+| tl_taper | 132 | 66 | 0 | 0 |
+| tl_offset | 132 | 132 | 45 | 0 |
+| tl_stuffed | 132 | 132 | 0 | 0.3 |
+| tl_combined | 264 | 66 | 45 | 0.3 |
+
+**Taper law:** S(x) = S0 + (Sm − S0) × x/L. This is linear **area**, not
+linear radius. The current kernel calls this profile `conical`, but that name
+must not be interpreted as a geometrically conical Hornresp horn. Match the area
+law, for example with sufficiently short sections, and report any approximation.
+Both expanding and contracting lines are supported.
+
+**Offset:** measured from the closed end, with 0 ≤ offset < total length. At a
+positive offset the model creates a closed stub from the closed end to the driver
+and a downstream section to the mouth. Their shared area is S(offset); lengths
+add to L. Zero offset removes the stub entirely. There is no extra rear chamber.
+The `tl_combined` case has a 45 cm stub, a 115 cm downstream section and
+208.3125 cm² area at the driver. Each section uses midpoint-area discretization,
+with at least 64 segments per total line (rounded upward per section).
+
+**Stuffing approximation:** attenuation is a nonnegative, frequency-independent
+coefficient alpha, applied uniformly to both sections. The propagation constant
+is gamma = alpha + j × 2πf / 343.2; characteristic impedance is rho × c / S.
+A forward traveling wave decays as exp(−alpha × distance). Alpha = 0.3 Np/m is
+about 2.606 dB/m of traveling-wave amplitude attenuation, not necessarily that
+change in the enclosure SPL. Zero restores the lossless baseline.
+
+This is a phenomenological damping control. It does **not** infer alpha from
+wool/polyester density, flow resistivity or placement; it does not model a
+stuffing-induced sound-speed change or frequency-dependent characteristic
+impedance. Do not equate 0.3 Np/m to a Hornresp stuffing-density setting. Compare
+the unstuffed taper and offset cases first; then document Hornresp's loss model
+when comparing the damped cases. Material-based stuffing prediction is still
+unimplemented and needs a separate calibrated model.
+
+### Checks for these extensions
+
+Live frontend-to-kernel tests exercise each case, geometry and mouth consistency,
+parameter sensitivity and JSON round trips. Independent continuous transmission-
+equation integration checks impedance and combined SPL over 41 log-spaced points.
+The 64-segment results satisfy <0.5% relative complex-impedance error and <0.15 dB
+SPL error on that test grid. Doubling segment count improves tapered-line
+impedance agreement. The tests also cover passivity, the zero-offset limit,
+invalid offset/attenuation values and reduced impedance peaks with damping.
+These tolerances describe internal numerical checks, not Hornresp agreement.
 
 ## External comparison request
 

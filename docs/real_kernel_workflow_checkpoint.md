@@ -197,3 +197,37 @@ comparison assumptions are in `examples/studio-comparison/`.
 Next: reconcile external reference results, add suitable loss/termination
 controls based on that evidence, and then taper/offset TL support. No claim of
 arbitrary topology support or release readiness.
+
+## 2026-11-15 — TL taper, offset and attenuation controls
+
+Expanded the TL Studio template using existing kernel features; kernel unchanged.
+Added independent closed-end and mouth areas, driver distance from the closed
+end and a nonnegative attenuation coefficient (Np/m). Equal areas / zero offset /
+zero attenuation reproduce the uniform lossless case. Old saved canonical models
+remain runnable without migration.
+
+The taper is linear area (the kernel's current `conical` implementation); the
+UI and comparison documentation explicitly distinguish it from linear radius.
+Positive offsets generate a closed stub and downstream line with continuous area
+at the driver and conserved total length. Zero offset omits the stub. The mouth
+radiation area follows mouth area. Segment count increased to 64 per total line,
+rounded upward per section. Editing invalid values blocks simulation; offsets
+at or beyond the mouth are rejected.
+
+Stuffing is a uniform constant-attenuation approximation, gamma = alpha + jω/c,
+not material/density-based stuffing. No speed-of-sound or characteristic-impedance
+change is inferred from alpha. The limitation is visible beside the control and
+in the exported model metadata and comparison guide.
+
+Validation: fourteen Python tests pass, including continuous-equation reference
+integration for tapered, offset, damped and combined cases, passivity, the
+zero-offset limit, damping effect and segmentation convergence. Graph eligibility
+and live HTTP integration tests cover the new parameters, geometry continuity,
+result changes and save/load. Production frontend build passes. Existing large
+bundle warning and Python testclient deprecation remain. New UI has not been
+browser-tested here because Chromium is unavailable under workspace restrictions.
+
+Added exact JSON/CSV cases `tl_taper`, `tl_offset`, `tl_stuffed`, `tl_combined` to
+examples/studio-comparison with comparison instructions. External Hornresp
+validation is pending; user plans to run it. Material-based stuffing prediction,
+partial stuffing and alternative taper laws remain future work.

@@ -4,7 +4,7 @@ React/Vite frontend + FastAPI backend adapter for os-lem.
 
 ## Supported development workflows
 
-Closed Box, Bass Reflex and a uniform unstuffed transmission line can be edited,
+Closed Box, Bass Reflex and a transmission line with linear-area taper, offset driver and attenuation can be edited,
 simulated, saved and loaded. Results include SPL and electrical impedance; BR/TL
 also expose separate driver/outlet SPL and displacement. Horn is not yet runnable.
 These are fixed topologies; arbitrary graph wiring remains restricted.

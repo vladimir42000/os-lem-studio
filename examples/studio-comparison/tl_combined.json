@@ -1,0 +1,101 @@
+{
+  "meta": {
+    "name": "studio_transmission_line",
+    "radiation_space": "2pi",
+    "studio_topology": "transmission_line",
+    "studio_line_assumptions": "Linear area taper; uniform attenuation alpha in Np/m; unchanged sound speed; no material-density calibration",
+    "studio_driver_offset_cm": 45
+  },
+  "driver": {
+    "id": "drv1",
+    "model": "ts_classic",
+    "Re": "5.8 ohm",
+    "Le": "0.35 mH",
+    "Fs": "34 Hz",
+    "Qes": 0.42,
+    "Qms": 4.1,
+    "Vas": "55 l",
+    "Sd": "132 cm2",
+    "source_voltage_rms": 2.83,
+    "node_front": "front",
+    "node_rear": "rear"
+  },
+  "elements": [
+    {
+      "id": "front_rad",
+      "type": "radiator",
+      "node": "front",
+      "model": "infinite_baffle_piston",
+      "area": "132 cm2"
+    },
+    {
+      "id": "closed_stub",
+      "type": "waveguide_1d",
+      "node_a": "closed_end",
+      "node_b": "rear",
+      "length": "45 cm",
+      "area_start": "264 cm2",
+      "area_end": "208.3125 cm2",
+      "profile": "conical",
+      "segments": 18,
+      "loss": 0.3
+    },
+    {
+      "id": "rear_line",
+      "type": "waveguide_1d",
+      "node_a": "rear",
+      "node_b": "mouth",
+      "length": "115 cm",
+      "area_start": "208.3125 cm2",
+      "area_end": "66 cm2",
+      "profile": "conical",
+      "segments": 46,
+      "loss": 0.3
+    },
+    {
+      "id": "mouth_rad",
+      "type": "radiator",
+      "node": "mouth",
+      "model": "unflanged_piston",
+      "area": "66 cm2"
+    }
+  ],
+  "observations": [
+    {
+      "id": "zin",
+      "type": "input_impedance",
+      "target": "drv1"
+    },
+    {
+      "id": "cone_displacement",
+      "type": "cone_displacement",
+      "target": "drv1"
+    },
+    {
+      "id": "spl_front",
+      "type": "spl",
+      "target": "front_rad",
+      "distance": "1 m"
+    },
+    {
+      "id": "spl_mouth",
+      "type": "spl",
+      "target": "mouth_rad",
+      "distance": "1 m"
+    },
+    {
+      "id": "spl_sum",
+      "type": "spl_sum",
+      "terms": [
+        {
+          "target": "front_rad",
+          "distance": "1 m"
+        },
+        {
+          "target": "mouth_rad",
+          "distance": "1 m"
+        }
+      ]
+    }
+  ]
+}

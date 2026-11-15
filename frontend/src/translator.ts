@@ -200,17 +200,34 @@ function buildBassReflexModel(nodes: CanvasNode[]) {
 function buildTransmissionLineModel(nodes: CanvasNode[]) {
   const driver = firstNode(nodes, node => node.data?.type === 'driver');
   const line = firstNode(nodes, node => node.data?.type === 'waveguide_1d');
-  const area = readNumber(line?.data ?? {}, ['areaCm2'], 132);
+  const data = line?.data ?? {};
+  const area = readNumber(data, ['areaCm2'], 132);
+  // Missing end area preserves legacy uniform-line graphs.
+  const mouthArea = readNumber(data, ['mouthAreaCm2'], area);
+  const lengthCm = readNumber(data, ['lengthCm'], 160);
+  const offsetCm = readNumber(data, ['driverOffsetCm'], 0);
+  const loss = readNumber(data, ['lossNpPerM'], 0);
+  // Kernel 'conical' currently means linear AREA, not linear radius.
+  const driverArea = area + (mouthArea - area) * offsetCm / lengthCm;
+  const section = (id: string, nodeA: string, nodeB: string, length: number, start: number, end: number) => ({
+    id, type: 'waveguide_1d', node_a: nodeA, node_b: nodeB,
+    length: withUnit(length, 'cm'), area_start: withUnit(start, 'cm2'), area_end: withUnit(end, 'cm2'),
+    profile: 'conical', segments: Math.max(1, Math.ceil(64 * length / lengthCm)), loss,
+  });
+  const sections = offsetCm > 0 ? [
+    section('closed_stub', 'closed_end', 'rear', offsetCm, area, driverArea),
+    section('rear_line', 'rear', 'mouth', lengthCm - offsetCm, driverArea, mouthArea),
+  ] : [section('rear_line', 'rear', 'mouth', lengthCm, area, mouthArea)];
   return {
-    meta: { name: 'studio_transmission_line', radiation_space: '2pi', studio_topology: 'transmission_line' },
+    meta: { name: 'studio_transmission_line', radiation_space: '2pi', studio_topology: 'transmission_line',
+      studio_line_assumptions: 'Linear area taper; uniform attenuation alpha in Np/m; unchanged sound speed; no material-density calibration',
+      studio_driver_offset_cm: offsetCm },
     driver: buildDriver(driver),
     elements: [
       { id: 'front_rad', type: 'radiator', node: 'front', model: 'infinite_baffle_piston',
         area: withUnit(readNumber(driver?.data ?? {}, ['Sd'], 132), 'cm2') },
-      { id: 'rear_line', type: 'waveguide_1d', node_a: 'rear', node_b: 'mouth',
-        length: withUnit(readNumber(line?.data ?? {}, ['lengthCm'], 160), 'cm'),
-        area_start: withUnit(area, 'cm2'), area_end: withUnit(area, 'cm2'), profile: 'conical', segments: 16 },
-      { id: 'mouth_rad', type: 'radiator', node: 'mouth', model: 'unflanged_piston', area: withUnit(area, 'cm2') },
+      ...sections,
+      { id: 'mouth_rad', type: 'radiator', node: 'mouth', model: 'unflanged_piston', area: withUnit(mouthArea, 'cm2') },
     ],
     observations: [
       { id: 'zin', type: 'input_impedance', target: 'drv1' },

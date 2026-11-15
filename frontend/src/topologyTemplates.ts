@@ -102,7 +102,7 @@ export const transmissionLineTemplate: GraphSnapshot = {
   nodes: [
     { ...bassReflexTemplate.nodes[0], data: { ...bassReflexTemplate.nodes[0].data } },
     { id: 'node_port_1', type: 'default', position: { x: 520, y: 50 },
-      data: { type: 'waveguide_1d', label: 'Uniform line + open mouth', areaCm2: 132, lengthCm: 160 } },
+      data: { type: 'waveguide_1d', label: 'Transmission line + open mouth', areaCm2: 132, mouthAreaCm2: 132, lengthCm: 160, driverOffsetCm: 0, lossNpPerM: 0 } },
     { ...bassReflexTemplate.nodes[3], data: { ...bassReflexTemplate.nodes[3].data } },
   ],
   edges: [

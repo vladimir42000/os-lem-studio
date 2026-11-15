@@ -55,8 +55,8 @@ export const BASS_REFLEX_SEEDED_PATTERN: GraphPattern = {
 };
 
 export const TRANSMISSION_LINE_PATTERN: GraphPattern = {
-  id: 'transmission_line', label: 'Uniform transmission line', runtimeClass: 'validated_anchor',
-  description: 'Driver at the closed end of a uniform line with an open radiating mouth.',
+  id: 'transmission_line', label: 'Transmission line', runtimeClass: 'validated_anchor',
+  description: 'Line with editable end areas, driver offset and attenuation; an implicit closed stub and mouth termination.',
   requiredNodeTypes: ['driver', 'waveguide_1d', 'radiator'],
   allowedNodeTypes: ['driver', 'waveguide_1d', 'radiator'],
   requiredConnections: [

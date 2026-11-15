@@ -248,8 +248,8 @@ function formatGraphAssessmentStatus(status: string): string {
 
 function getAnchorWorkflowCopy(topology: TopologyId, status: string, reasons: string[]) {
   if ((topology === 'bass_reflex' || topology === 'transmission_line') && status === 'compilable_anchor') {
-    return { title: topology === 'bass_reflex' ? 'Bass Reflex simulation' : 'Uniform transmission line',
-      detail: 'SPL combines driver and mouth pressures at 1 m in half-space. Ideal lossless enclosure; external comparison pending.',
+    return { title: topology === 'bass_reflex' ? 'Bass Reflex simulation' : 'Transmission line',
+      detail: 'SPL combines driver and mouth pressures at 1 m in half-space. External comparison pending.',
       runLabel: 'Run simulation', resetLabel: 'Reset template' };
   }
   if (topology === 'closed_box' && status === 'compilable_anchor') {
@@ -285,11 +285,16 @@ function getAnchorWorkflowCopy(topology: TopologyId, status: string, reasons: st
 
   if (topology === 'bass_reflex') {
     return {
-      title: 'Seeded but gated Bass Reflex path',
-      detail: reasons[0] ?? 'Bass Reflex remains explicitly gated in the current truthful line.',
+      title: 'Bass Reflex needs a valid model',
+      detail: reasons[0] ?? 'Restore template connections and enter valid parameters.',
       runLabel: 'Simulation gated',
       resetLabel: 'Reset to Bass Reflex seed',
     };
+  }
+
+  if (topology === 'transmission_line') {
+    return { title: 'Transmission line needs valid parameters', detail: reasons[0] ?? 'Check line geometry and driver offset.',
+      runLabel: 'Check parameters', resetLabel: 'Reset template' };
   }
 
   return {
@@ -755,8 +760,7 @@ export default function App() {
       const isLine = selectedTopology === 'transmission_line';
       return <>
         <h3>{isLine ? 'Transmission Line' : 'Bass Reflex'} parameters</h3>
-        <p>Reference TS driver. Ideal lossless model; no stuffing, leakage or port friction.
-          {isLine ? ' Uniform line, driver at its entrance; mouth area equals line area.' : ' Port mouth area follows port area.'}</p>
+        <p>{isLine ? 'Linear-area taper with an optional offset driver and distributed stuffing attenuation. No leakage or material-density calibration.' : 'Reference TS driver. Lossless box and port; no leakage or port friction.'}</p>
         <h4>Driver</h4>
         {[
           ['Re', 'ohm', 5.8], ['Le', 'mH', 0.35], ['Fs', 'Hz', 34], ['Qes', '', 0.42],
@@ -770,11 +774,23 @@ export default function App() {
           }} />)}
         {volumeNode && <LabeledInput label="Box volume" suffix="liters" value={volumeNode.data.Vb}
           onChange={value => patchNodeData(volumeNode.id, { Vb: parsePositiveNumber(value, 28) })} />}
-        <h4>{isLine ? 'Uniform line' : 'Port'}</h4>
-        <LabeledInput label={isLine ? 'Line area' : 'Port area'} suffix="cm²" value={portNode.data.areaCm2}
+        <h4>{isLine ? 'Line geometry' : 'Port'}</h4>
+        <LabeledInput label={isLine ? 'Closed-end area' : 'Port area'} suffix="cm²" value={portNode.data.areaCm2}
           onChange={value => patchNodeData(portNode.id, { areaCm2: parsePositiveNumber(value, isLine ? 132 : 24) })} />
         <LabeledInput label={isLine ? 'Line length' : 'Port length'} suffix="cm" value={portNode.data.lengthCm}
           onChange={value => patchNodeData(portNode.id, { lengthCm: parsePositiveNumber(value, isLine ? 160 : 18) })} />
+        {isLine && <>
+          <LabeledInput label="Mouth area" suffix="cm²" value={portNode.data.mouthAreaCm2 ?? portNode.data.areaCm2}
+            onChange={value => patchNodeData(portNode.id, { mouthAreaCm2: Number(value) })} />
+          <LabeledInput label="Driver distance from closed end" suffix="cm" value={portNode.data.driverOffsetCm ?? 0}
+            onChange={value => patchNodeData(portNode.id, { driverOffsetCm: Number(value) })} />
+          <p>Offset must be at least zero and smaller than total line length. Equal end areas give a uniform line; either expanding or contracting tapers are supported.</p>
+          <h4>Stuffing approximation</h4>
+          <LabeledInput label="Attenuation" suffix="Np/m" value={portNode.data.lossNpPerM ?? 0}
+            onChange={value => patchNodeData(portNode.id, { lossNpPerM: Number(value) })} />
+          <p>0 = no attenuation. Applied along the entire line, including the closed stub.
+            This models damping only: sound speed remains 343.2 m/s. It is not a Hornresp stuffing-density value.</p>
+        </>}
         <p>Front radiation area follows driver Sd. Mouth radiation uses an unflanged piston.</p>
       </>;
     }
@@ -875,8 +891,8 @@ export default function App() {
           />
           <TopologyCard
             title="Transmission Line"
-            subtitle="Uniform, unstuffed line"
-            status="Editable length and area; combined SPL"
+            subtitle="Taper, offset driver and damping"
+            status="Editable geometry and attenuation; combined SPL"
             active={selectedTopology === 'transmission_line'}
             onClick={() => handleTopologySelect('transmission_line')}
           />

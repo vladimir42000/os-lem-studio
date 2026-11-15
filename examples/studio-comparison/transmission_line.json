@@ -2,7 +2,9 @@
   "meta": {
     "name": "studio_transmission_line",
     "radiation_space": "2pi",
-    "studio_topology": "transmission_line"
+    "studio_topology": "transmission_line",
+    "studio_line_assumptions": "Linear area taper; uniform attenuation alpha in Np/m; unchanged sound speed; no material-density calibration",
+    "studio_driver_offset_cm": 0
   },
   "driver": {
     "id": "drv1",
@@ -35,7 +37,8 @@
       "area_start": "132 cm2",
       "area_end": "132 cm2",
       "profile": "conical",
-      "segments": 16
+      "segments": 64,
+      "loss": 0
     },
     {
       "id": "mouth_rad",

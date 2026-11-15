@@ -76,7 +76,7 @@ const EDITABLE_PARAMETERS: Record<string, string[]> = {
   driver: ['Re', 'Le', 'Sd', 'Fs', 'Qes', 'Qms', 'Vas', 'source_voltage_rms'],
   volume: ['Vb', 'volume_l'],
   duct: ['areaCm2', 'lengthCm'],
-  waveguide_1d: ['areaCm2', 'lengthCm'],
+  waveguide_1d: ['areaCm2', 'lengthCm', 'mouthAreaCm2', 'driverOffsetCm', 'lossNpPerM'],
   radiator: ['Sd', 'area_cm2'],
 };
 
@@ -85,8 +85,10 @@ function matchesEditableTemplate(seed: GraphSnapshot | null, current: GraphSnaps
   for (const node of current.nodes) {
     const data = node.data || {};
     for (const key of EDITABLE_PARAMETERS[data.type] || []) {
-      if (key in data && (typeof data[key] !== 'number' || !Number.isFinite(data[key]) || data[key] <= 0)) return false;
+      const allowZero = data.type === 'waveguide_1d' && ['driverOffsetCm', 'lossNpPerM'].includes(key);
+      if (key in data && (typeof data[key] !== 'number' || !Number.isFinite(data[key]) || (allowZero ? data[key] < 0 : data[key] <= 0))) return false;
     }
+    if (data.type === 'waveguide_1d' && (data.driverOffsetCm ?? 0) >= (data.lengthCm ?? 160)) return false;
   }
   const withoutParameters = (graph: GraphSnapshot): GraphSnapshot => ({
     ...graph,
@@ -183,7 +185,7 @@ function assessFromNormalizedArgs(args: AssessArgsObject): GraphCompilabilityAss
       (topology === 'transmission_line' && matchedPattern?.id === TRANSMISSION_LINE_PATTERN.id)) {
     const supported = matchesEditableTemplate(seedGraph, currentGraph);
     return buildAssessment(supported ? 'compilable_anchor' : 'composition_not_yet_compilable',
-      [supported ? 'Supported topology with valid parameters' : 'Restore the template connections and use positive finite parameters'],
+      [supported ? 'Supported topology with valid parameters' : 'Use positive areas and length, nonnegative attenuation, and a driver offset smaller than line length; keep template connections'],
       supported, primitiveAssessment, exactSeedMatch);
   }
 

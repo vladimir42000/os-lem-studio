@@ -39,8 +39,8 @@ const TOPOLOGY_PRIMITIVE_SUPPORT: Record<TopologyId, PrimitiveSupportEntry[]> = 
     { primitive: 'duct', status: 'validated_anchor', note: 'supported fixed Bass Reflex topology' },
   ],
   transmission_line: [
-    { primitive: 'driver', status: 'validated_anchor', note: 'driver at line entrance' },
-    { primitive: 'waveguide_1d', status: 'validated_anchor', note: 'uniform lossless line, open mouth' },
+    { primitive: 'driver', status: 'validated_anchor', note: 'entrance or offset driver' },
+    { primitive: 'waveguide_1d', status: 'validated_anchor', note: 'linear-area taper, offset and uniform attenuation' },
     { primitive: 'radiator', status: 'validated_anchor', note: 'front and implicit mouth radiation' },
   ],
   horn: [

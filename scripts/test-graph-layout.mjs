@@ -42,3 +42,11 @@ for (const [topology,template] of [['bass_reflex',templates.bassReflexTemplate],
   const renamed=structuredClone(template);renamed.nodes.forEach(n=>n.data.label='vent port driver');assert(gate(renamed));
 }
 console.log('PASS: BR/TL templates and parameter edits run; invalid values and structural changes are blocked.');
+const tl=templates.transmissionLineTemplate;
+const tlGate=patch=>{
+  const current=structuredClone(tl);Object.assign(current.nodes.find(n=>n.data.type==='waveguide_1d').data,patch);
+  return assessGraphCompilability({topology:'transmission_line',...current,seedGraph:tl}).canRunSimulation;
+};
+for(const patch of [{driverOffsetCm:0,lossNpPerM:0},{driverOffsetCm:45,mouthAreaCm2:66,lossNpPerM:.3},{mouthAreaCm2:264},{driverOffsetCm:159.9}]) assert(tlGate(patch));
+for(const patch of [{driverOffsetCm:-1},{driverOffsetCm:160},{driverOffsetCm:161},{lossNpPerM:-.1},{lossNpPerM:NaN},{mouthAreaCm2:0},{mouthAreaCm2:Infinity},{driverOffsetCm:'45'}]) assert(!tlGate(patch));
+console.log('PASS: taper/offset/attenuation bounds; zero offset and zero attenuation remain valid.');

@@ -89,3 +89,42 @@ for(const [name,template] of [['bass_reflex',bassReflexTemplate],['transmission_
   }
   console.log(`PASS: ${name} real-kernel combined SPL, geometry sensitivity, label independence, save/load, voltage scaling.`);
 }
+const tlGrid=Array.from({length:600},(_,i)=>10*100**(i/599));
+const tlModel=patch=>{
+  const graph=structuredClone(transmissionLineTemplate);
+  Object.assign(graph.nodes.find(n=>n.data.type==='waveguide_1d').data,patch);
+  return buildModelDict(graph.nodes,graph.edges);
+};
+const tlRun=model=>runSimulationThin({...options,canonicalModel:model,frequenciesHz:tlGrid});
+const tlBase=await tlRun(tlModel({}));
+for(const [name,patch] of [
+  ['tl_taper',{mouthAreaCm2:66}],
+  ['tl_offset',{driverOffsetCm:45}],
+  ['tl_stuffed',{lossNpPerM:.3}],
+  ['tl_combined',{areaCm2:264,mouthAreaCm2:66,driverOffsetCm:45,lossNpPerM:.3}],
+]) {
+  const model=tlModel(patch);
+  const result=await tlRun(model);
+  assert(result.series.spl_sum.every(Number.isFinite));
+  assert(result.properties.zin_mag_ohm.some((v,i)=>Math.abs(v-tlBase.properties.zin_mag_ohm[i])>.1),name);
+  assert.deepEqual((await tlRun(JSON.parse(JSON.stringify(model)))).series,result.series);
+  const line=model.elements.filter(e=>e.type==='waveguide_1d');
+  assert(line.every(e=>Number.parseFloat(e.length)>0));
+  assert.equal(line.length,patch.driverOffsetCm ? 2 : 1);
+  assert.equal(line.at(-1).area_end,model.elements.find(e=>e.id==='mouth_rad').area);
+  if(patch.driverOffsetCm) {
+    assert.equal(line[0].node_a,'closed_end');
+    assert.equal(line[0].node_b,'rear');assert.equal(line[1].node_a,'rear');
+    assert.equal(line[0].area_end,line[1].area_start);
+    assert(Math.abs(line.reduce((s,e)=>s+parseFloat(e.length),0)-160)<1e-9);
+    const expected=(patch.areaCm2??132)+((patch.mouthAreaCm2??132)-(patch.areaCm2??132))*45/160;
+    assert.equal(parseFloat(line[0].area_end),expected);
+  }
+  if(process.env.STUDIO_EXPORT_REFERENCE_DIR) {
+    const {writeFileSync}=await import('node:fs'); const folder=process.env.STUDIO_EXPORT_REFERENCE_DIR;
+    writeFileSync(`${folder}/${name}.json`,JSON.stringify(model,null,2)+'\n');
+    const rows=tlGrid.map((f,i)=>[f,result.series.spl_sum[i],result.series.spl_front[i],result.series.spl_mouth[i],result.properties.zin_mag_ohm[i],Math.atan2(result.properties.zin_complex_ohm[i].imag,result.properties.zin_complex_ohm[i].real)*180/Math.PI].join(','));
+    writeFileSync(`${folder}/${name}.csv`,['frequency_hz,spl_combined_db,spl_driver_db,spl_outlet_db,impedance_ohm,impedance_phase_deg',...rows].join('\n')+'\n');
+  }
+  console.log(`PASS: ${name} live run, geometry/termination consistency, parameter sensitivity and save/load.`);
+}
