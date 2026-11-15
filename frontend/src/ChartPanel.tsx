@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import ReactECharts from 'echarts-for-react';
 import { buildObservableOptions, toNumericArray, overlaySeries, type Overlay, type ObservableId } from './chartData';
 type ObservableOption = ReturnType<typeof buildObservableOptions>[number];
@@ -9,7 +9,7 @@ function defaultObservableId(options: ObservableOption[]): ObservableId {
   return options.find((option) => option.values.length > 0)?.id ?? 'spl';
 }
 
-export default function ChartPanel({ simulationData, overlays = [], stale = false }: ChartPanelProps) {
+export default memo(function ChartPanel({ simulationData, overlays = [], stale = false }: ChartPanelProps) {
   const [selectedObservableId, setSelectedObservableId] = useState<ObservableId>('spl');
 
   const freqs = useMemo(() => toNumericArray(simulationData?.frequencies_hz), [simulationData]);
@@ -170,8 +170,8 @@ export default function ChartPanel({ simulationData, overlays = [], stale = fals
           {selectedObservable?.reason ?? 'No numeric data is available for the selected observable.'}
         </div>
       ) : (
-        <ReactECharts notMerge option={option} style={{ height: 'max(360px, 55vh)', width: '100%' }} />
+        <ReactECharts className="main-response-chart" notMerge option={option} style={{ height: '100%', minHeight: 280, width: '100%' }} />
       )}
     </div>
   );
-}
+});

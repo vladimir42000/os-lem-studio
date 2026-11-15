@@ -255,3 +255,33 @@ build checks also run. No dependencies or kernel changes. Chromium visual testin
 remains unavailable here; the DOM test does not claim chart/layout verification.
 See results_tuning.md for usage and test commands. Pointer-pad tuning and
 per-gesture Undo remain the next step.
+
+## 2026-11-15 — Two-axis pad and graph-focused Results layout
+
+Added horizontal/vertical mapping of propagated parameters, primary-pointer/touch
+capture, relative factor-per-pad and absolute units-per-pixel sensitivities.
+Zero-valued parameters default to an absolute step. Per-parameter settings persist
+in optional Workspace.tuning metadata (old sessions remain accepted) and memories.
+A completed drag is one history change; Undo restores the complete pre-drag graph
+and result. Pointer cancellation/Escape/window blur restore the start. No-op
+clicks do not create a history entry. The frozen previous curve is grey/dashed,
+independent of the saved dotted reference.
+
+Calculations run serially with a 120 ms scheduling interval during gestures;
+completed intermediate results are drawn, and release schedules the final model.
+Generation protection still prevents recalled/undone state being overwritten.
+Memorise is disabled during gestures and while the final result is pending.
+TL length/offset coupling is constrained before running. Browser writes pause
+while dragging; chart memoization avoids redraw on unchanged simulation data.
+
+Results now starts with the graph and pad side by side. Increased graph height,
+added an in-page full-viewport mode with Undo/Memorise controls, and moved numeric
+fields/memory cards below the graph. Normal page and focus mode remain responsive;
+narrow phones stack the pad underneath. Existing comparison overlays retained.
+
+Validation: production build, pure gesture arithmetic/bounds, session/settings
+round trips, graph gates and chart selection tests; React DOM interaction tests
+cover live pre-release curve changes, two values changing together, grey previous
+curve, atomic Undo, cancellation, release, persisted sensitivity and focus toggle.
+DOM tests still stub chart drawing; no claim of browser visual QA. Acoustic
+kernel and dependencies are unchanged. Hornresp/Akabak validation is still pending.

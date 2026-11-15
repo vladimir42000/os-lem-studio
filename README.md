@@ -17,7 +17,7 @@ include exact assumptions, JSON models and CSV curves. External validation is pe
 Select **Show in Results** beside model parameters to edit them alongside curves.
 **Memorise** keeps up to nine complete model/results; recall, compare and a dotted
 reference curve are available. Sessions restore after refresh and can be exported.
-See [Results tuning guide](docs/results_tuning.md). Two-axis dragging is the next step.
+See [Results tuning guide](docs/results_tuning.md). The two-axis pad supports live adjustment, sensitivity settings and one Undo per drag; a full-screen graph view keeps it beside the plot.
 
 ## Quick start
 

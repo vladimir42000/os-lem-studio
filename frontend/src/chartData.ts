@@ -94,7 +94,7 @@ export function buildObservableOptions(simulationData: any): ObservableOption[] 
 }
 
 
-export type Overlay = { id: number; label: string; data: any; reference: boolean };
+export type Overlay = { id: number; label: string; data: any; reference: boolean; previous?: boolean };
 const colours = ['#d97706','#059669','#9333ea','#dc2626','#0891b2','#be185d','#4d7c0f','#a16207','#475569'];
 export function overlaySeries(overlays: Overlay[], observable: ObservableId) {
   return overlays.flatMap(overlay => {
@@ -103,7 +103,7 @@ export function overlaySeries(overlays: Overlay[], observable: ObservableId) {
     if (!frequencies.length || values.length !== frequencies.length) return [];
     return [{ name: `${overlay.label}${overlay.reference ? ' (reference)' : ''}`, type: 'line', showSymbol: false,
       data: frequencies.map((f,i)=>[f,values[i]]), smooth: false,
-      lineStyle: { type: overlay.reference ? 'dotted' : 'solid', width: overlay.reference ? 3 : 1.5, color: colours[(overlay.id-1)%colours.length] },
-      itemStyle: { color: colours[(overlay.id-1)%colours.length] }, z: overlay.reference ? 5 : 1 }];
+      lineStyle: { type: overlay.previous ? 'dashed' : overlay.reference ? 'dotted' : 'solid', width: overlay.reference ? 3 : 1.5, color: overlay.previous ? '#9ca3af' : colours[(overlay.id-1)%colours.length] },
+      itemStyle: { color: overlay.previous ? '#9ca3af' : colours[(overlay.id-1)%colours.length] }, z: overlay.reference ? 5 : 1 }];
   });
 }

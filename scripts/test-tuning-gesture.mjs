@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import {createRequire} from 'node:module';
+const require=createRequire(new URL('../frontend/package.json',import.meta.url));
+const {build}=require('esbuild');
+const r=await build({entryPoints:[new URL('../frontend/src/tuningGesture.ts',import.meta.url).pathname],bundle:true,write:false,format:'esm',platform:'node'});
+const {dragValue,defaultSensitivity}=await import(`data:text/javascript;base64,${Buffer.from(r.outputFiles[0].text).toString('base64')}`);
+assert.equal(dragValue(50,200,200,defaultSensitivity(50),false),100);
+assert.equal(dragValue(50,-200,200,defaultSensitivity(50),false),25);
+assert.equal(dragValue(50,10,200,{mode:'absolute',step:.5},false),55);
+assert.equal(dragValue(0,20,200,defaultSensitivity(0),true),.2);
+assert.equal(dragValue(0,-20,200,defaultSensitivity(0),true),0);
+assert(dragValue(5,-100,200,{mode:'absolute',step:1},false)>0);
+assert(Number.isFinite(dragValue(50,1e9,200,defaultSensitivity(50),false)));
+console.log('PASS: relative doubling/halving, absolute units/pixel, zero-value fallback, bounds and finite overflow handling.');

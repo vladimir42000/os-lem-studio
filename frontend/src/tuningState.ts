@@ -1,8 +1,9 @@
+import type { PadSettings } from './tuningGesture';
 import { buildModelDict } from './translator';
 import type { Node, Edge } from 'reactflow';
 export type Topology = 'closed_box' | 'bass_reflex' | 'transmission_line' | 'horn';
 export type Graph = { nodes: Node[]; edges: Edge[] };
-export type Workspace = { topology: Topology; graph: Graph; seed: Graph; override: Record<string, any> | null; pins: string[] };
+export type Workspace = { topology: Topology; graph: Graph; seed: Graph; override: Record<string, any> | null; pins: string[]; tuning?: PadSettings };
 export type ResultRecord = { model: Record<string, any>; data: any; source: 'graph-derived' | 'loaded-override' };
 export type Memory = { id: number; label: string; workspace: Workspace; result: ResultRecord; compare: boolean };
 export type TuningSession = { version: 1; workspace: Workspace; result: ResultRecord | null; memories: Memory[]; nextId: number; referenceId: number | null };
@@ -34,7 +35,7 @@ function validGraph(g: any): boolean {
 }
 function validWorkspace(w: any): boolean {
   return object(w) && ['closed_box','bass_reflex','transmission_line','horn'].includes(w.topology) && validGraph(w.graph) && validGraph(w.seed) &&
-    (w.override === null || object(w.override)) && stringList(w.pins);
+    (w.override === null || object(w.override)) && stringList(w.pins) && (w.tuning === undefined || (object(w.tuning) && typeof w.tuning.x === 'string' && typeof w.tuning.y === 'string' && object(w.tuning.sensitivity) && Object.values(w.tuning.sensitivity).every((p:any)=>object(p) && ['relative','absolute'].includes(p.mode) && Number.isFinite(p.step) && p.step > 0)));
 }
 function validResult(r: any): boolean {
   return object(r) && object(r.model) && ['graph-derived','loaded-override'].includes(r.source) && object(r.data) &&

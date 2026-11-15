@@ -63,5 +63,36 @@ try {
  assert.equal(results().querySelector('input[type=number]').value,'80');
  await click(button('Result 2'));assert.equal(results().querySelector('input[type=number]').value,'60');
  assert.equal(globalThis.chartOption.series[0].data[0][1],60);
+ // Add a second propagated parameter, then exercise two-axis gestures.
+ await click(button('Model'));await click(inputByName('Show Driver Re in Results'));await click(button('Results'));
+ const pad=document.querySelector('[aria-label="Two parameter control pad"]');
+ pad.setPointerCapture=()=>{};pad.releasePointerCapture=()=>{};
+ pad.getBoundingClientRect=()=>({width:200,height:200,left:0,top:0});
+ const axes=document.querySelectorAll('.pad-axis select');
+ const setSelect=async(el,value)=>act(async()=>{el.value=value;el.dispatchEvent(new Event('change',{bubbles:true}));});
+ await setSelect(axes[0],'closed_box:node_volume_1:Vb');
+ await setSelect(document.querySelectorAll('.pad-axis')[1].querySelector('select'),'closed_box:node_driver_1:Re');
+ const pointer=async(type,x,y)=>act(async()=>{
+  const e=new MouseEvent(type,{bubbles:true,clientX:x,clientY:y,button:0});Object.defineProperty(e,'pointerId',{value:1});pad.dispatchEvent(e);
+ });
+ await click(button('Full-screen graph'));assert(document.querySelector('.graph-focus'));
+ await pointer('pointerdown',0,200);await pointer('pointermove',200,0);await wait(170);
+ assert.equal(calls.at(-1).model_dict.elements.find(e=>e.type==='volume').value,'120 l');
+ assert.equal(calls.at(-1).model_dict.driver.Re,'10 ohm');
+ assert.equal(globalThis.chartOption.series[0].data[0][1],120,'curve must update before pointer release');
+ assert(globalThis.chartOption.series.some(s=>s.name==='Before last drag'&&s.lineStyle.type==='dashed'&&s.data[0][1]===60));
+ await pointer('pointerup',200,0);await wait();
+ await click(button('Undo last adjustment'));
+ assert.equal(globalThis.chartOption.series[0].data[0][1],60);
+ const workspace=JSON.parse(localStorage.getItem('oslem.tuning-session.v1')).workspace;
+ assert.equal(workspace.graph.nodes.find(n=>n.data.type==='volume').data.Vb,60);
+ assert.equal(workspace.graph.nodes.find(n=>n.data.type==='driver').data.Re,5);
+ assert.equal(workspace.tuning.sensitivity[workspace.tuning.x].step,2);
+ // Cancellation restores the model; movement after release does nothing.
+ await pointer('pointerdown',0,200);await pointer('pointermove',100,100);await pointer('pointercancel',100,100);await wait();
+ assert.equal(globalThis.chartOption.series[0].data[0][1],60);
+ const count=calls.length;await pointer('pointermove',200,0);await wait();assert.equal(calls.length,count);
+ await click(button('Exit full-screen view'));assert(!document.querySelector('.graph-focus'));
+ console.log('PASS: two-axis relative gesture, live request, dashed previous curve, one-step whole-model Undo, cancellation, release, sensitivity persistence and focus-view toggle.');
  console.log('PASS: Model pin -> Results edit/autocalculation, memory/recall, reference independent of compare, stale-response rejection, and refresh restoration.');
 } finally {await act(async()=>root.unmount());rmSync(output,{force:true});dom.window.close();}

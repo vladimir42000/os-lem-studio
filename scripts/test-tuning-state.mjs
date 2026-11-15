@@ -30,3 +30,10 @@ for(const [topology,template] of [['closed_box',closedBoxTemplate],['bass_reflex
  for(const p of parameters){const nodes=copy(template.nodes);nodes.find(n=>n.id===p.nodeId).data[p.key]=p.value===0?.2:p.value*1.1;assert.notEqual(JSON.stringify(buildModelDict(nodes,template.edges)),JSON.stringify(buildModelDict(template.nodes,template.edges)),`${p.id} must affect the model`);}
 }
 console.log('PASS: deep memories, stale rejection, recall, capacity/labels, session validation, parameter coverage and overlay frequency/reference styles.');
+
+const withPad=structuredClone(s);withPad.workspace.tuning={x:'volume',y:'Re',sensitivity:{volume:{mode:'absolute',step:.25},Re:{mode:'relative',step:2}}};
+assert.deepEqual(parseSession(JSON.stringify(withPad)).workspace.tuning,withPad.workspace.tuning);
+withPad.workspace.tuning.sensitivity.volume.step=-1;assert.throws(()=>parseSession(JSON.stringify(withPad)));
+const previous=overlaySeries([{id:0,label:'Before last drag',data,reference:false,previous:true}],'spl');
+assert.equal(previous[0].lineStyle.type,'dashed');assert.equal(previous[0].lineStyle.color,'#9ca3af');
+console.log('PASS: pad settings round-trip and validation; previous-gesture grey dashed overlay.');

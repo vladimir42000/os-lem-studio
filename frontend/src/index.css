@@ -108,3 +108,32 @@ summary { cursor: pointer; font-weight: 600; }
 .memory-list { display: grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap: 10px; margin: 12px 0; }
 .memory-slot { display: flex; flex-direction: column; gap: 7px; padding: 10px; background: white; border: 1px solid #dbe3ef; border-radius: 6px; }
 .memory-slot label, .memory-slot small { font-size: 12px; }
+.graph-station { background: white; border: 1px solid #dbe3ef; border-radius: 8px; margin-bottom: 12px; }
+.graph-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:8px 12px; border-bottom:1px solid #dbe3ef; }
+.graph-toolbar span { margin-left:auto; font-size:12px; }
+.graph-and-pad { display:grid; grid-template-columns:minmax(0,1fr) 270px; height:max(640px,calc(100dvh - 170px)); }
+.graph-and-pad .results-chart { min-height:0; height:100%; min-width:0; }
+.main-response-chart { flex:1; min-height:280px; }
+.tuning-pad-panel { padding:12px; background:#f1f5f9; border-left:1px solid #dbe3ef; overflow-y:auto; }
+.pad-axis { margin-bottom:12px; }
+.pad-axis label { display:block; font-size:12px; margin:4px 0; }
+.pad-axis select,.pad-axis input { display:block; width:100%; min-width:0; padding:5px; border:1px solid #cbd5e1; border-radius:5px; background:white; color:#172b45; }
+.pad-axis strong { font-size:14px; }
+.tuning-pad { height:180px; border:2px solid #3b82f6; border-radius:8px; display:grid; place-items:center; text-align:center; user-select:none; touch-action:none; cursor:crosshair; background:linear-gradient(90deg,transparent 49.5%,#cbd5e1 50%,transparent 50.5%),linear-gradient(transparent 49.5%,#cbd5e1 50%,transparent 50.5%),#eff6ff; }
+.tuning-pad[aria-disabled=true] { opacity:.5; cursor:not-allowed; }
+.tuning-pad.dragging { background-color:#dbeafe; border-color:#1d4ed8; }
+.tuning-pad span { background:#eff6ffe8; padding:8px; font-size:13px; pointer-events:none; }
+.tuning-pad-panel>small { display:block; font-size:11px; margin-top:8px; }
+.graph-focus { position:fixed; inset:0; z-index:1000; border-radius:0; display:flex; flex-direction:column; margin:0; }
+.graph-focus .graph-and-pad { flex:1; min-height:0; height:0; }
+@media(max-width:800px) {
+ .graph-and-pad { grid-template-columns:minmax(0,1fr) 210px; }
+ .tuning-pad-panel { padding:6px; }
+ .graph-toolbar button { font-size:12px; padding:6px; }
+}
+@media(max-width:540px) {
+ .graph-and-pad { display:flex; flex-direction:column; height:auto; }
+ .graph-and-pad .results-chart { height:65dvh; min-height:360px; }
+ .graph-focus .graph-and-pad { overflow:auto; }
+ .tuning-pad-panel { flex-shrink:0; }
+}

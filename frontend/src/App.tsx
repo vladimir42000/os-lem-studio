@@ -1,3 +1,5 @@
+import TuningPad from './TuningPad';
+import { emptyPad, type PadSettings } from './tuningGesture';
 import ParameterPanel from './ParameterPanel';
 import MemoryPanel from './MemoryPanel';
 import { parametersFor, type Parameter } from './parameters';
@@ -317,6 +319,16 @@ export default function App() {
   const [storageError,setStorageError] = useState('');
   const [resultRecord,setResultRecord] = useState<ResultRecord | null>(restored?.result ?? null);
   const [autoRecalculate,setAutoRecalculate] = useState(true);
+  const [padSettings,setPadSettings] = useState<PadSettings>(restored?.workspace.tuning ?? emptyPad());
+  const [dragging,setDragging] = useState(false);
+  const [forceRecalculate,setForceRecalculate] = useState(false);
+  const [graphFocus,setGraphFocus] = useState(false);
+  const [previousGesture,setPreviousGesture] = useState<ResultRecord | null>(null);
+  const [gestureUndo,setGestureUndo] = useState<{workspace:Workspace;result:ResultRecord|null;history:HistoryState}|null>(null);
+  const gestureStart = useRef<{workspace:Workspace;result:ResultRecord|null;history:HistoryState}|null>(null);
+  const gestureLatest = useRef<GraphSnapshot|null>(null);
+  const draggingRef = useRef(false);
+  const gesturePriorCurve = useRef<ResultRecord|null>(null);
   const attemptedKey = useRef('');
   const [activeView, setActiveView] = useState<'model' | 'results' | 'files'>('model');
   const [selectedTopology, setSelectedTopology] = useState<TopologyId>(restored?.workspace.topology ?? 'closed_box');
@@ -354,10 +366,11 @@ export default function App() {
   identityRef.current = currentIdentity;
   const generation = useRef(0);
   const parameters = useMemo(() => parametersFor(nodes, selectedTopology), [nodes, selectedTopology]);
-  const workspace: Workspace = { topology: selectedTopology, graph: currentGraph, seed: seedGraph, override: loadedCanonicalModelOverride, pins };
+  const workspace: Workspace = { topology: selectedTopology, graph: currentGraph, seed: seedGraph, override: loadedCanonicalModelOverride, pins, tuning: padSettings };
   const session: TuningSession = { version: 1, workspace, result: resultRecord, memories, nextId, referenceId };
-  const sessionText = JSON.stringify(session);
+  const sessionText = dragging ? '' : JSON.stringify(session);
   useEffect(() => {
+    if(!sessionText)return;
     try { localStorage.setItem(SESSION_KEY,sessionText); setStorageError(''); }
     catch { setStorageError('Browser storage is unavailable or full. Use Save tuning session to keep your work.'); }
   }, [sessionText]);
@@ -400,8 +413,12 @@ export default function App() {
     [selectedTopology, nodes, edges, seedGraph, currentGraph],
   ) as { status: string; reasons: string[] };
 
-  const canUndo = historyState.index > 0;
+  const canUndo = !dragging && (!!gestureUndo || historyState.index > 0);
   const canRedo = historyState.index < historyState.snapshots.length - 1;
+  const chartOverlays = useMemo(()=>[
+    ...memories.filter(m=>m.compare || m.id===referenceId).map(m=>({id:m.id,label:m.label,data:m.result.data,reference:m.id===referenceId})),
+    ...(previousGesture?[{id:0,label:'Before last drag',data:previousGesture.data,reference:false,previous:true}]:[]),
+  ],[memories,referenceId,previousGesture]);
   const currentWarnings = Array.isArray(simulationResult?.warnings)
     ? simulationResult.warnings.filter((warning: unknown) => typeof warning === 'string' && warning.trim().length > 0)
     : [];
@@ -438,6 +455,7 @@ export default function App() {
   const handleTopologySelect = useCallback(
     (topology: TopologyId) => {
       const nextSeed = seedTemplateGraph(topology);
+      setGestureUndo(null);setPreviousGesture(null);
       setSelectedTopology(topology);
       setLoadedCanonicalModelOverride(null);
       setLoadError(null);
@@ -499,6 +517,7 @@ export default function App() {
   );
 
   const changeParameter = (p: Parameter, value: number) => {
+    setGestureUndo(null);setPreviousGesture(null);
     patchNodeData(p.nodeId, { [p.key]: value });
     setRunError(null);
   };
@@ -506,7 +525,9 @@ export default function App() {
   const changeMemories = (s: TuningSession) => { setMemories(s.memories); setNextId(s.nextId); setReferenceId(s.referenceId); };
   const restoreSession = (s: TuningSession) => {
     generation.current += 1;
+    setGestureUndo(null);setPreviousGesture(null);
     const w = clone(s.workspace);
+    setPadSettings(w.tuning ?? emptyPad());
     setSelectedTopology(w.topology);setSeedGraph(w.seed);setPins(w.pins);setLoadedCanonicalModelOverride(w.override);
     replaceWorkingGraph(w.graph,{recordHistory:false,resetHistory:true});
     setSelectedNodeId(w.graph.nodes[0]?.id ?? null);
@@ -520,7 +541,55 @@ export default function App() {
     catch(error){setSessionError(error instanceof Error ? error.message : 'Cannot memorise result.');}
   };
 
-  const handleUndo = useCallback(() => {
+  const restoreGesture = (saved: {workspace:Workspace;result:ResultRecord|null;history:HistoryState}) => {
+    generation.current += 1;
+    setNodes(clone(saved.workspace.graph.nodes));setEdges(clone(saved.workspace.graph.edges));setHistoryState(clone(saved.history));
+    setResultRecord(clone(saved.result));setSimulationResult(saved.result?.data ?? null);
+    setLatestResultCanonicalModelSnapshotKey(saved.result ? stableSnapshotKey(saved.result.model) : null);
+    setLatestResultSourceKind(saved.result?.source ?? null);setGestureUndo(null);setRunError(null);setForceRecalculate(false);
+    attemptedKey.current='';
+  };
+  const startGesture = () => {
+    gesturePriorCurve.current=previousGesture;
+    const saved = clone({workspace,result:resultRecord,history:historyState});
+    gestureStart.current=saved;gestureLatest.current=clone(currentGraph);
+    setPreviousGesture(resultRecord ? clone(resultRecord) : null);
+    draggingRef.current=true;setDragging(true);setRunError(null);
+  };
+  const moveGesture = (values:Record<string,number>) => {
+    const saved=gestureStart.current;if(!saved)return;
+    const next=clone(saved.workspace.graph);
+    for(const p of parameters) if(p.id in values) {
+      const node=next.nodes.find(n=>n.id===p.nodeId);if(node)node.data[p.key]=values[p.id];
+    }
+    // Keep coupled TL geometry valid, including when both length and offset move.
+    for(const node of next.nodes) if(node.data.type==='waveguide_1d') {
+      const d=node.data;
+      if(d.driverOffsetCm>=d.lengthCm) {
+        const offsetParameter=parameters.find(p=>p.nodeId===node.id&&p.key==='driverOffsetCm');
+        if(offsetParameter && offsetParameter.id in values) d.driverOffsetCm=Math.max(0,d.lengthCm-1e-6);
+        else d.lengthCm=d.driverOffsetCm+1e-6;
+      }
+    }
+    const assessment=assessGraphCompilability({topology:selectedTopology,...next,seedGraph});
+    if(!assessment.canRunSimulation){setRunError(assessment.reasons[0]);return;}
+    gestureLatest.current=next;setNodes(next.nodes);setEdges(next.edges);
+  };
+  const endGesture = () => {
+    const saved=gestureStart.current,latest=gestureLatest.current;
+    draggingRef.current=false;setDragging(false);gestureStart.current=null;
+    if(saved&&latest&&JSON.stringify(saved.workspace.graph)!==JSON.stringify(latest)) {
+      setGestureUndo(saved);setHistoryState(pushSnapshotBounded(saved.history,latest));
+      attemptedKey.current='';setForceRecalculate(true);
+    } else setPreviousGesture(gesturePriorCurve.current);
+  };
+  const cancelGesture = () => {
+    const saved=gestureStart.current;gestureStart.current=null;draggingRef.current=false;setDragging(false);
+    if(saved)restoreGesture(saved);setPreviousGesture(gesturePriorCurve.current);
+  };
+
+  const handleUndo = () => {
+    if (gestureUndo) { restoreGesture(gestureUndo);return; }
     setHistoryState((prev) => {
       if (prev.index === 0) return prev;
       const nextIndex = prev.index - 1;
@@ -529,7 +598,7 @@ export default function App() {
       setEdges(snapshot.edges);
       return { ...prev, index: nextIndex };
     });
-  }, []);
+  };
 
   const handleRedo = useCallback(() => {
     setHistoryState((prev) => {
@@ -655,7 +724,7 @@ export default function App() {
         canonicalModel: runCanonicalModel,
         frequenciesHz,
       });
-      if (identityRef.current !== runIdentity || generation.current !== runGeneration) return;
+      if (generation.current !== runGeneration || (!draggingRef.current && identityRef.current !== runIdentity)) return;
       setResultRecord({model:runCanonicalModel,data:result,source:currentCanonicalModelSourceKind});
       setSimulationResult(result);
       if (!automatic) { setActiveView('results'); window.scrollTo({ top: 0, behavior: 'smooth' }); }
@@ -664,7 +733,7 @@ export default function App() {
       setLatestResultSourceKind(currentCanonicalModelSourceKind);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Thin runner failed.';
-      if (identityRef.current === runIdentity && generation.current === runGeneration) setRunError(message);
+      if (identityRef.current === runIdentity && generation.current === runGeneration) { setRunError(message); if(!draggingRef.current)setForceRecalculate(false); }
     } finally {
       simulationInFlight.current = false;
       setIsSimulating(false);
@@ -672,11 +741,27 @@ export default function App() {
   }, [canRunSimulation, canonicalModel, currentCanonicalModelSourceKind, graphAssessment.reasons, currentIdentity]);
 
   useEffect(() => {
-    if (activeView !== 'results' || !autoRecalculate || !canRunSimulation || isSimulating ||
+    if (simulationResult && !resultLifecycleIsStale) setForceRecalculate(false);
+    if (dragging || activeView !== 'results' || (!autoRecalculate && !forceRecalculate) || !canRunSimulation || isSimulating ||
         (simulationResult && !resultLifecycleIsStale) || attemptedKey.current === currentIdentity) return;
     const timer = setTimeout(() => { void handleRunSimulationThin(true); }, 350);
     return () => clearTimeout(timer);
-  }, [activeView,autoRecalculate,canRunSimulation,isSimulating,simulationResult,resultLifecycleIsStale,currentIdentity,handleRunSimulationThin]);
+  }, [dragging,forceRecalculate,activeView,autoRecalculate,canRunSimulation,isSimulating,simulationResult,resultLifecycleIsStale,currentIdentity,handleRunSimulationThin]);
+
+  const liveRun = useRef<()=>void>(()=>{});
+  liveRun.current=()=>{if(canRunSimulation && !simulationInFlight.current && attemptedKey.current!==currentIdentity) void handleRunSimulationThin(true);};
+  useEffect(()=>{
+    if(!dragging)return;
+    const timer=setInterval(()=>liveRun.current(),120);
+    return()=>clearInterval(timer);
+  },[dragging]);
+  useEffect(()=>{
+    if(!graphFocus)return;
+    const previous=document.body.style.overflow;document.body.style.overflow='hidden';
+    const escape=(e:KeyboardEvent)=>{if(e.key==='Escape'&&!draggingRef.current)setGraphFocus(false);};
+    window.addEventListener('keydown',escape);
+    return()=>{document.body.style.overflow=previous;window.removeEventListener('keydown',escape);};
+  },[graphFocus]);
 
 
 
@@ -849,15 +934,34 @@ export default function App() {
       </div>
 
       {activeView === 'results' && <section className="results-workspace" aria-label="Simulation results">
-        <details className="results-tuning" open>
+        <div className={`graph-station ${graphFocus?'graph-focus':''}`}>
+          <div className="graph-toolbar">
+            <button onClick={()=>setGraphFocus(!graphFocus)} disabled={dragging}>{graphFocus?'Exit full-screen view':'Full-screen graph'}</button>
+            <button onClick={()=>void handleRunSimulationThin(true)} disabled={dragging || isSimulating || !canRunSimulation}>Run</button>
+            <button onClick={handleUndo} disabled={!canUndo}>Undo last adjustment</button>
+            <button onClick={remember} disabled={dragging || isSimulating || !simulationResult || resultLifecycleIsStale || !canRunSimulation || memories.length>=9}>Memorise</button>
+            <span role="status">{isSimulating?'Calculating…':resultStateLabel}</span>
+          </div>
+          {runError && <div role="alert">{runError}</div>}
+          <div className="graph-and-pad">
+            <div className="results-chart">
+              <ChartPanel simulationData={simulationResult} stale={resultLifecycleIsStale && !dragging}
+                overlays={chartOverlays} />
+            </div>
+            <TuningPad parameters={parameters.filter(p=>pins.includes(p.id))} settings={padSettings} onSettings={setPadSettings}
+              disabled={!!loadedCanonicalModelOverride || !canRunSimulation || (!dragging && (isSimulating || !simulationResult || resultLifecycleIsStale))}
+              onStart={startGesture} onMove={moveGesture} onEnd={endGesture} onCancel={cancelGesture} />
+          </div>
+        </div>
+        <details className="results-tuning">
           <summary>Results parameters</summary>
           <p>Enter a value, then press Enter or leave the field to apply it. These are the same values as in Model.</p>
           <label><input type="checkbox" checked={autoRecalculate} onChange={e=>{setAutoRecalculate(e.target.checked);attemptedKey.current='';}} />Recalculate automatically</label>
           {loadedCanonicalModelOverride && <p>Loaded canonical model is active. Recall an editable graph memory or choose a Model template to tune graph parameters.</p>}
-          <ParameterPanel parameters={parameters} pins={pins} results disabled={!!loadedCanonicalModelOverride} onPin={togglePin} onChange={changeParameter} />
+          <ParameterPanel parameters={parameters} pins={pins} results disabled={dragging || !!loadedCanonicalModelOverride} onPin={togglePin} onChange={changeParameter} />
           {!canRunSimulation && <p role="alert">{graphAssessment.reasons[0]}</p>}
         </details>
-        <MemoryPanel session={session} canMemorise={!!simulationResult && !resultLifecycleIsStale && !isSimulating && canRunSimulation}
+        <MemoryPanel session={session} canMemorise={!dragging && !!simulationResult && !resultLifecycleIsStale && !isSimulating && canRunSimulation}
           onMemorise={remember} onRecall={id=>restoreSession(recall(session,id))} onChange={changeMemories} onLoad={restoreSession} onError={setSessionError} />
         {sessionError && <p role="alert">{sessionError}</p>}
         {storageError && <p role="alert">{storageError}</p>}
@@ -869,10 +973,7 @@ export default function App() {
         <div style={{ padding: '10px 12px 0 12px' }}>
           <SimulationWarningsSurface warnings={currentWarnings} isStale={resultLifecycleIsStale} />
         </div>
-        <div className="results-chart">
-          <ChartPanel simulationData={simulationResult} stale={resultLifecycleIsStale}
-            overlays={memories.filter(m=>m.compare || m.id===referenceId).map(m=>({id:m.id,label:m.label,data:m.result.data,reference:m.id===referenceId}))} />
-        </div>
+
       </section>}
 
       <section hidden={activeView !== 'files'} className="files-workspace">

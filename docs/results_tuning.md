@@ -1,4 +1,4 @@
-# Results tuning — first step
+# Results tuning and two-parameter pad
 
 ## Use it
 
@@ -30,7 +30,7 @@ A downloaded session is the portable backup; browser storage is not a substitute
 
 Current model is a prominent solid blue curve. When parameters have changed but
 calculation is not complete, its last calculation is shown grey/dashed and marked
-as previous. This is a stale-result indication, not yet gesture-level Undo.
+as previous. This stale-result indication is separate from the frozen **Before last drag** curve.
 Memories use their own frequency samples; comparison axes span all shown data.
 Unavailable observables are explicitly reported instead of silently substituting
 a different saved curve. Electrical phase remains impedance phase.
@@ -72,5 +72,54 @@ npm install --prefix /tmp/oslem-ui-tests --no-audit --no-fund jsdom@26
 JSDOM_MODULE_PATH=/tmp/oslem-ui-tests/node_modules/jsdom/lib/api.js node scripts/test-tuning-ui.mjs
 ```
 
-The next step is the two-axis pointer pad, per-parameter sensitivity and one Undo
-operation per complete drag. Those interactions are not part of this checkpoint.
+## Two-parameter pad and large graph
+
+The graph is now the first section in Results. Memory cards, numeric fields and
+exports are below it; numeric fields can be expanded when needed. Click
+**Full-screen graph** for an in-page view covering the browser viewport with the
+pad beside the graph. **Exit full-screen view** or Escape returns to the page.
+The browser's own chrome remains visible; F11 can hide it where supported.
+
+1. Mark at least two Model parameters with **Show in Results**.
+2. Run the model, then choose distinct **Horizontal →** and **Vertical ↑**
+   parameters beside the graph.
+3. Hold the primary mouse button (or touch) on the pad. Right increases X;
+   up increases Y. Pointer capture keeps the drag working outside the pad.
+4. Release to finish. A final calculation is requested even if automatic numeric
+   editing recalculation is off. Further pointer movement makes no changes.
+5. **Undo last adjustment**, or the header Undo, restores the whole pre-drag graph
+   and its calculation in one operation. Escape during a drag, pointer cancellation
+   or window focus loss cancels and restores its starting state.
+
+Before each drag, the starting curve is frozen as a **grey dashed** curve.
+A memorised reference remains separately **dotted**. The current live result is
+solid. Curves update as calculations finish; while dragging, the last completed
+intermediate calculation is shown even when the pointer has moved ahead. Only
+one request is in flight, with a maximum start rate around 8 Hz. The final
+released position is always checked. This is not a guarantee of 8 simulations
+per second; speed depends on the model and computer.
+
+Relative sensitivity defaults to factor 2 per pad width/height:
+`value = starting_value × factor^(signed_distance / pad_span)`.
+A full move in the positive direction doubles, the same negative move halves.
+Absolute mode uses the displayed units per pixel. For zero values, the initial
+fallback is 0.01 units/pixel. Sensitivities are remembered per parameter, including
+when it moves between axes, and saved with model memories and tuning sessions.
+Existing sessions without pad settings remain compatible.
+
+Positive-only quantities remain positive; nonnegative quantities cannot fall
+below zero. Coupled TL geometry is kept valid: if the offset is selected it is
+limited below the line length; otherwise shortening the line stops above the
+existing offset. Very extreme values may still produce a backend numerical error;
+Undo remains available. A press/release without a value change adds no undo entry.
+
+The plot is memoized so pointer movement alone does not redraw unchanged curves,
+and browser session writes pause during a drag. Memories can only capture a fully
+calculated current result, never a pending intermediate model. Graph Undo treats
+each completed drag as one change; sensitivity edits are retained when undoing.
+
+Tests additionally cover relative/absolute increments, zero-value fallback,
+live curve updates before release, saved pad settings, the grey pre-drag curve,
+one-step restoration of both parameters, cancellation/release and focus-view
+entry/exit. DOM tests stub actual chart drawing; visual Chromebook verification
+remains outstanding.
