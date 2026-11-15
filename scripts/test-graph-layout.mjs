@@ -23,3 +23,22 @@ assert.notEqual(assess(changed),'compilable_anchor');
 const disconnected=structuredClone(seed);disconnected.edges.pop();
 assert.notEqual(assess(disconnected),'compilable_anchor');
 console.log('PASS: graph movement/selection preserve run eligibility; valid parameter edits run; invalid values, driver-model changes and connection changes remain gated.');
+const templateBuild=await build({entryPoints:[new URL('../frontend/src/topologyTemplates.ts',import.meta.url).pathname],bundle:true,write:false,format:'esm',platform:'node'});
+const templates=await import(`data:text/javascript;base64,${Buffer.from(templateBuild.outputFiles[0].text).toString('base64')}`);
+for (const [topology,template] of [['bass_reflex',templates.bassReflexTemplate],['transmission_line',templates.transmissionLineTemplate]]) {
+  const gate=current=>assessGraphCompilability({topology,...current,seedGraph:template}).canRunSimulation;
+  assert(gate(template),topology);
+  for (const key of ['areaCm2','lengthCm']) {
+    const edited=structuredClone(template);
+    const line=edited.nodes.find(n=>['duct','waveguide_1d'].includes(n.data.type));
+    line.data[key]*=1.5;
+    assert(gate(edited));
+    for(const invalid of [0,-1,NaN,Infinity,'20']) {
+      line.data[key]=invalid; assert(!gate(edited));
+    }
+  }
+  const disconnected=structuredClone(template);disconnected.edges.pop();assert(!gate(disconnected));
+  const extra=structuredClone(template);extra.nodes.push({...extra.nodes[0],id:'extra'});assert(!gate(extra));
+  const renamed=structuredClone(template);renamed.nodes.forEach(n=>n.data.label='vent port driver');assert(gate(renamed));
+}
+console.log('PASS: BR/TL templates and parameter edits run; invalid values and structural changes are blocked.');

@@ -2,10 +2,6 @@ import { CanvasNode, CanvasEdge } from './types';
 
 type NodeData = Record<string, any>;
 
-function pickDefined<T>(...values: T[]): T | undefined {
-  return values.find((value) => value !== undefined && value !== null && value !== '');
-}
-
 function readText(data: NodeData, keys: string[], fallback: string): string {
   for (const key of keys) {
     const value = data[key];
@@ -31,17 +27,8 @@ function withUnit(value: number, unit: string): string {
   return `${value} ${unit}`;
 }
 
-function labelIncludes(data: NodeData, needles: string[]): boolean {
-  const label = String(pickDefined(data.label, data.role, data.name, '')).toLowerCase();
-  return needles.some((needle) => label.includes(needle));
-}
-
 function firstNode(nodes: CanvasNode[], predicate: (node: CanvasNode) => boolean): CanvasNode | null {
   return nodes.find(predicate) ?? null;
-}
-
-function allNodes(nodes: CanvasNode[], predicate: (node: CanvasNode) => boolean): CanvasNode[] {
-  return nodes.filter(predicate);
 }
 
 function buildDriver(driverNode: CanvasNode | null) {
@@ -57,6 +44,7 @@ function buildDriver(driverNode: CanvasNode | null) {
     Qms: readNumber(data, ['Qms'], 4.1),
     Vas: withUnit(readNumber(data, ['Vas'], 55), 'l'),
     Sd: withUnit(readNumber(data, ['Sd'], 132), 'cm2'),
+    source_voltage_rms: readNumber(data, ['source_voltage_rms'], 2.83),
     node_front: 'front',
     node_rear: 'rear',
   };
@@ -67,7 +55,7 @@ function buildClosedBoxModel(nodes: CanvasNode[]) {
   const volumeNode = firstNode(nodes, (node) => node.data?.type === 'volume');
   const frontRadiatorNode = firstNode(
     nodes,
-    (node) => node.data?.type === 'radiator' && !labelIncludes(node.data ?? {}, ['port', 'vent']),
+    (node) => node.data?.type === 'radiator',
   );
 
   const modelDict: any = {
@@ -115,38 +103,24 @@ function buildClosedBoxModel(nodes: CanvasNode[]) {
 function buildBassReflexModel(nodes: CanvasNode[]) {
   const driverNode = firstNode(nodes, (node) => node.data?.type === 'driver');
   const volumeNode = firstNode(nodes, (node) => node.data?.type === 'volume');
-  const ductNode = firstNode(
-    nodes,
-    (node) =>
-      node.data?.type === 'duct' ||
-      labelIncludes(node.data ?? {}, ['port', 'vent']) ||
-      pickDefined(node.data?.portAreaCm2, node.data?.portLengthCm, node.data?.Ap, node.data?.Lp) !== undefined,
-  );
-
-  const radiatorNodes = allNodes(nodes, (node) => node.data?.type === 'radiator');
-  const explicitPortRadiator = firstNode(
-    radiatorNodes,
-    (node) => labelIncludes(node.data ?? {}, ['port', 'vent']),
-  );
-  const frontRadiatorNode =
-    firstNode(radiatorNodes, (node) => !labelIncludes(node.data ?? {}, ['port', 'vent'])) ?? radiatorNodes[0] ?? null;
-
+  const ductNode = firstNode(nodes, node => node.data?.type === 'duct');
+  const frontRadiatorNode = firstNode(nodes, node => node.data?.type === 'radiator');
   const ductData = ductNode?.data ?? {};
   const portAreaCm2 = readNumber(
     ductData,
-    ['area_cm2', 'Area', 'Sd', 'portAreaCm2', 'Ap', 'port_area_cm2'],
+    ['areaCm2', 'area_cm2', 'Area', 'Sd', 'portAreaCm2', 'Ap', 'port_area_cm2'],
     25,
   );
   const portLengthCm = readNumber(
     ductData,
-    ['length_cm', 'Length', 'Lp', 'portLengthCm', 'port_length_cm', 'L'],
+    ['lengthCm', 'length_cm', 'Length', 'Lp', 'portLengthCm', 'port_length_cm', 'L'],
     15,
   );
 
-  const portRadiatorData = explicitPortRadiator?.data ?? {
+  const portRadiatorData = {
     type: 'radiator',
     label: 'Port Radiation',
-    model: 'infinite_baffle_piston',
+    model: 'unflanged_piston',
     Sd: portAreaCm2,
   };
 
@@ -155,13 +129,6 @@ function buildBassReflexModel(nodes: CanvasNode[]) {
       name: 'studio_simulation',
       radiation_space: '2pi',
       studio_topology: 'bass_reflex',
-      studio_br_minimum_runnable_candidate: true,
-      studio_br_validation_note:
-        'Bass reflex remains gated. The current Studio line emits separate front and port SPL traces plus impedance, but does not yet expose a validated first-class combined system SPL observable.',
-      studio_br_system_spl_status: 'blocked',
-      studio_br_system_spl_blocker:
-        'A truthful BR system SPL path still requires either a kernel-native summed radiation observable or another validated phase-aware system-pressure contract. The current separate spl_front and spl_port traces are not yet sufficient to ungate BR runtime.',
-      studio_br_system_spl_next_patch: 'audit/studio-bass-reflex-kernel-summed-observable-contract',
     },
     driver: buildDriver(driverNode),
     elements: [],
@@ -186,10 +153,10 @@ function buildBassReflexModel(nodes: CanvasNode[]) {
     type: 'radiator',
     node: 'front',
     model: readText(frontRadiatorNode?.data ?? {}, ['model'], 'infinite_baffle_piston'),
-    area: withUnit(readNumber(frontRadiatorNode?.data ?? {}, ['Sd', 'area_cm2'], 132), 'cm2'),
+    area: withUnit(readNumber(driverNode?.data ?? {}, ['Sd'], 132), 'cm2'),
   });
 
-  // Minimum vented-box candidate path:
+  // Fixed vented-box path:
   // rear chamber -> duct vent -> vent mouth radiator
   modelDict.elements.push({
     id: 'vent_duct',
@@ -222,20 +189,44 @@ function buildBassReflexModel(nodes: CanvasNode[]) {
     distance: '1 m',
   });
 
+  modelDict.observations.push({ id: 'cone_displacement', type: 'cone_displacement', target: 'drv1' });
+  modelDict.observations.push({ id: 'spl_sum', type: 'spl_sum', terms: [
+    { target: 'front_rad', distance: '1 m' }, { target: 'port_rad', distance: '1 m' },
+  ] });
+
   return modelDict;
 }
 
+function buildTransmissionLineModel(nodes: CanvasNode[]) {
+  const driver = firstNode(nodes, node => node.data?.type === 'driver');
+  const line = firstNode(nodes, node => node.data?.type === 'waveguide_1d');
+  const area = readNumber(line?.data ?? {}, ['areaCm2'], 132);
+  return {
+    meta: { name: 'studio_transmission_line', radiation_space: '2pi', studio_topology: 'transmission_line' },
+    driver: buildDriver(driver),
+    elements: [
+      { id: 'front_rad', type: 'radiator', node: 'front', model: 'infinite_baffle_piston',
+        area: withUnit(readNumber(driver?.data ?? {}, ['Sd'], 132), 'cm2') },
+      { id: 'rear_line', type: 'waveguide_1d', node_a: 'rear', node_b: 'mouth',
+        length: withUnit(readNumber(line?.data ?? {}, ['lengthCm'], 160), 'cm'),
+        area_start: withUnit(area, 'cm2'), area_end: withUnit(area, 'cm2'), profile: 'conical', segments: 16 },
+      { id: 'mouth_rad', type: 'radiator', node: 'mouth', model: 'unflanged_piston', area: withUnit(area, 'cm2') },
+    ],
+    observations: [
+      { id: 'zin', type: 'input_impedance', target: 'drv1' },
+      { id: 'cone_displacement', type: 'cone_displacement', target: 'drv1' },
+      { id: 'spl_front', type: 'spl', target: 'front_rad', distance: '1 m' },
+      { id: 'spl_mouth', type: 'spl', target: 'mouth_rad', distance: '1 m' },
+      { id: 'spl_sum', type: 'spl_sum', terms: [
+        { target: 'front_rad', distance: '1 m' }, { target: 'mouth_rad', distance: '1 m' },
+      ] },
+    ],
+  };
+}
+
 export function buildModelDict(nodes: CanvasNode[], _edges: CanvasEdge[]) {
-  const hasDuctNode = nodes.some((node) => node.data?.type === 'duct');
-  const hasPortHint = nodes.some(
-    (node) =>
-      labelIncludes(node.data ?? {}, ['port', 'vent']) ||
-      pickDefined(node.data?.portAreaCm2, node.data?.portLengthCm, node.data?.Ap, node.data?.Lp) !== undefined,
-  );
-
-  if (hasDuctNode || hasPortHint) {
-    return buildBassReflexModel(nodes);
-  }
-
+  // Dispatch on primitives, never on user-editable display labels.
+  if (nodes.some(node => node.data?.type === 'waveguide_1d')) return buildTransmissionLineModel(nodes);
+  if (nodes.some(node => node.data?.type === 'duct')) return buildBassReflexModel(nodes);
   return buildClosedBoxModel(nodes);
 }

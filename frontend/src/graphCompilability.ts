@@ -6,6 +6,7 @@ import {
   type TopologyId,
 } from './graphPrimitiveConstraints';
 import {
+  TRANSMISSION_LINE_PATTERN,
   BASS_REFLEX_SEEDED_PATTERN,
   CLOSED_BOX_ANCHOR_PATTERN,
 } from './graphPatterns';
@@ -69,15 +70,17 @@ function normalizeSnapshot(snapshot: GraphSnapshot | null | undefined): string {
   return JSON.stringify({ nodes, edges });
 }
 
-// Only numeric parameters already consumed by the Closed Box translator may
+// Only numeric parameters consumed by the fixed-topology translators may
 // vary. Keep models, node IDs, connections and unsupported fields seed-bound.
 const EDITABLE_PARAMETERS: Record<string, string[]> = {
-  driver: ['Re', 'Le', 'Sd', 'Fs', 'Qes', 'Qms', 'Vas'],
+  driver: ['Re', 'Le', 'Sd', 'Fs', 'Qes', 'Qms', 'Vas', 'source_voltage_rms'],
   volume: ['Vb', 'volume_l'],
+  duct: ['areaCm2', 'lengthCm'],
+  waveguide_1d: ['areaCm2', 'lengthCm'],
   radiator: ['Sd', 'area_cm2'],
 };
 
-function matchesEditableClosedBox(seed: GraphSnapshot | null, current: GraphSnapshot): boolean {
+function matchesEditableTemplate(seed: GraphSnapshot | null, current: GraphSnapshot): boolean {
   if (!seed) return false;
   for (const node of current.nodes) {
     const data = node.data || {};
@@ -157,7 +160,7 @@ function assessFromNormalizedArgs(args: AssessArgsObject): GraphCompilabilityAss
   const matchedPattern = primitiveAssessment.matchedPattern;
 
   if (matchedPattern?.id === CLOSED_BOX_ANCHOR_PATTERN.id) {
-    if (topology === 'closed_box' && matchesEditableClosedBox(seedGraph, currentGraph)) {
+    if (topology === 'closed_box' && matchesEditableTemplate(seedGraph, currentGraph)) {
       return buildAssessment(
         'compilable_anchor',
         ['supported Closed Box topology with valid parameters'],
@@ -176,24 +179,12 @@ function assessFromNormalizedArgs(args: AssessArgsObject): GraphCompilabilityAss
     );
   }
 
-  if (matchedPattern?.id === BASS_REFLEX_SEEDED_PATTERN.id) {
-    if (topology === 'bass_reflex' && exactSeedMatch) {
-      return buildAssessment(
-        'seeded_but_not_runnable',
-        ['seeded Bass Reflex path still gated in this line'],
-        false,
-        primitiveAssessment,
-        true,
-      );
-    }
-
-    return buildAssessment(
-      'composition_not_yet_compilable',
-      ['Bass Reflex edits moved graph beyond the current seeded/gated support line'],
-      false,
-      primitiveAssessment,
-      false,
-    );
+  if ((topology === 'bass_reflex' && matchedPattern?.id === BASS_REFLEX_SEEDED_PATTERN.id) ||
+      (topology === 'transmission_line' && matchedPattern?.id === TRANSMISSION_LINE_PATTERN.id)) {
+    const supported = matchesEditableTemplate(seedGraph, currentGraph);
+    return buildAssessment(supported ? 'compilable_anchor' : 'composition_not_yet_compilable',
+      [supported ? 'Supported topology with valid parameters' : 'Restore the template connections and use positive finite parameters'],
+      supported, primitiveAssessment, exactSeedMatch);
   }
 
   if ((topology === 'transmission_line' || topology === 'horn') && exactSeedMatch) {

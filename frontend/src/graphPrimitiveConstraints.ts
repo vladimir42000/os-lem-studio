@@ -1,5 +1,6 @@
 import type { Edge as ReactFlowEdge, Node as ReactFlowNode } from 'reactflow';
 import {
+  TRANSMISSION_LINE_PATTERN,
   BASS_REFLEX_SEEDED_PATTERN,
   CLOSED_BOX_ANCHOR_PATTERN,
   type GraphPattern,
@@ -8,7 +9,7 @@ import {
 } from './graphPatterns';
 
 export type PrimitiveSupportStatus = 'validated_anchor' | 'seeded_gated' | 'unsupported';
-export type SupportedPrimitiveType = 'driver' | 'volume' | 'radiator' | 'duct';
+export type SupportedPrimitiveType = 'driver' | 'volume' | 'radiator' | 'duct' | 'waveguide_1d';
 export type TopologyId = 'closed_box' | 'bass_reflex' | 'transmission_line' | 'horn';
 
 export interface PrimitiveSupportEntry {
@@ -32,16 +33,15 @@ const TOPOLOGY_PRIMITIVE_SUPPORT: Record<TopologyId, PrimitiveSupportEntry[]> = 
     { primitive: 'duct', status: 'unsupported', note: 'not part of the validated Closed Box anchor' },
   ],
   bass_reflex: [
-    { primitive: 'driver', status: 'seeded_gated', note: 'seeded/gated in the current Bass Reflex line' },
-    { primitive: 'volume', status: 'seeded_gated', note: 'seeded/gated in the current Bass Reflex line' },
-    { primitive: 'radiator', status: 'seeded_gated', note: 'seeded/gated in the current Bass Reflex line' },
-    { primitive: 'duct', status: 'seeded_gated', note: 'seeded/gated in the current Bass Reflex line' },
+    { primitive: 'driver', status: 'validated_anchor', note: 'supported fixed Bass Reflex topology' },
+    { primitive: 'volume', status: 'validated_anchor', note: 'supported fixed Bass Reflex topology' },
+    { primitive: 'radiator', status: 'validated_anchor', note: 'supported fixed Bass Reflex topology' },
+    { primitive: 'duct', status: 'validated_anchor', note: 'supported fixed Bass Reflex topology' },
   ],
   transmission_line: [
-    { primitive: 'driver', status: 'unsupported', note: 'seed-only / non-runnable in this line' },
-    { primitive: 'volume', status: 'unsupported', note: 'seed-only / non-runnable in this line' },
-    { primitive: 'radiator', status: 'unsupported', note: 'seed-only / non-runnable in this line' },
-    { primitive: 'duct', status: 'unsupported', note: 'seed-only / non-runnable in this line' },
+    { primitive: 'driver', status: 'validated_anchor', note: 'driver at line entrance' },
+    { primitive: 'waveguide_1d', status: 'validated_anchor', note: 'uniform lossless line, open mouth' },
+    { primitive: 'radiator', status: 'validated_anchor', note: 'front and implicit mouth radiation' },
   ],
   horn: [
     { primitive: 'driver', status: 'unsupported', note: 'seed-only / non-runnable in this line' },
@@ -114,6 +114,10 @@ export function assessPrimitiveConstraints(
       matchedPattern: BASS_REFLEX_SEEDED_PATTERN,
       primitiveSupport,
     };
+  }
+
+  if (matchGraphPattern(TRANSMISSION_LINE_PATTERN, nodes, edges).matches) {
+    return { isValid: reasons.length === 0, reasons, matchedPattern: TRANSMISSION_LINE_PATTERN, primitiveSupport };
   }
 
   const hasDriver = nodes.some((node) => getPrimitiveType(node) === 'driver');

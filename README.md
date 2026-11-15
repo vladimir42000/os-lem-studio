@@ -2,6 +2,16 @@
 
 React/Vite frontend + FastAPI backend adapter for os-lem.
 
+## Supported development workflows
+
+Closed Box, Bass Reflex and a uniform unstuffed transmission line can be edited,
+simulated, saved and loaded. Results include SPL and electrical impedance; BR/TL
+also expose separate driver/outlet SPL and displacement. Horn is not yet runnable.
+These are fixed topologies; arbitrary graph wiring remains restricted.
+
+[Reference cases and Hornresp/Akabak comparison instructions](examples/studio-comparison/README.md)
+include exact assumptions, JSON models and CSV curves. External validation is pending.
+
 ## Quick start
 
 Assumptions:

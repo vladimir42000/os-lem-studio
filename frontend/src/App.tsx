@@ -1,3 +1,4 @@
+import { closedBoxTemplate, bassReflexTemplate, transmissionLineTemplate } from './topologyTemplates';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import ReactFlow, {
   Background,
@@ -42,112 +43,6 @@ type HistoryState = {
 
 const HISTORY_LIMIT = 40;
 
-const closedBoxTemplate: GraphSnapshot = {
-  nodes: [
-    {
-      id: 'node_driver_1',
-      type: 'default',
-      position: { x: 250, y: 150 },
-      data: {
-        type: 'driver',
-        label: '12NW100 Driver',
-        model: 'ts_classic',
-        Sd: 531,
-        Bl: 21.3,
-        Re: 5.0,
-        Mms: 94,
-        Cms: 0.15,
-        Rms: 4.1,
-        Le: 1.4,
-      },
-    },
-    {
-      id: 'node_volume_1',
-      type: 'default',
-      position: { x: 500, y: 50 },
-      data: {
-        type: 'volume',
-        label: 'Rear Chamber',
-        Vb: 50.0,
-      },
-    },
-    {
-      id: 'node_radiator_1',
-      type: 'default',
-      position: { x: 500, y: 250 },
-      data: {
-        type: 'radiator',
-        label: 'Front Radiation',
-        model: 'infinite_baffle_piston',
-        Sd: 531,
-      },
-    },
-  ],
-  edges: [
-    { id: 'edge-1', source: 'node_driver_1', target: 'node_volume_1' },
-    { id: 'edge-2', source: 'node_driver_1', target: 'node_radiator_1' },
-  ],
-};
-
-const bassReflexTemplate: GraphSnapshot = {
-  nodes: [
-    {
-      id: 'node_driver_1',
-      type: 'default',
-      position: { x: 240, y: 160 },
-      data: {
-        type: 'driver',
-        label: '12NW100 Driver',
-        model: 'ts_classic',
-        Sd: 531,
-        Bl: 21.3,
-        Re: 5.0,
-        Mms: 94,
-        Cms: 0.15,
-        Rms: 4.1,
-        Le: 1.4,
-      },
-    },
-    {
-      id: 'node_volume_1',
-      type: 'default',
-      position: { x: 500, y: 50 },
-      data: {
-        type: 'volume',
-        label: 'Rear Chamber',
-        Vb: 65.0,
-      },
-    },
-    {
-      id: 'node_port_1',
-      type: 'default',
-      position: { x: 520, y: 165 },
-      data: {
-        type: 'duct',
-        label: 'Port',
-        areaCm2: 120,
-        lengthCm: 20,
-      },
-    },
-    {
-      id: 'node_radiator_1',
-      type: 'default',
-      position: { x: 520, y: 285 },
-      data: {
-        type: 'radiator',
-        label: 'Front Radiation',
-        model: 'infinite_baffle_piston',
-        Sd: 531,
-      },
-    },
-  ],
-  edges: [
-    { id: 'edge-1', source: 'node_driver_1', target: 'node_volume_1' },
-    { id: 'edge-2', source: 'node_driver_1', target: 'node_radiator_1' },
-    { id: 'edge-3', source: 'node_volume_1', target: 'node_port_1' },
-  ],
-};
-
 function placeholderTemplate(label: string): GraphSnapshot {
   return {
     nodes: [
@@ -187,7 +82,7 @@ function seedTemplateGraph(topology: TopologyId): GraphSnapshot {
       : topology === 'bass_reflex'
         ? bassReflexTemplate
         : topology === 'transmission_line'
-          ? placeholderTemplate('Transmission Line seed')
+          ? transmissionLineTemplate
           : placeholderTemplate('Horn seed');
 
   const seeded = cloneGraphSnapshot(base);
@@ -352,6 +247,11 @@ function formatGraphAssessmentStatus(status: string): string {
 }
 
 function getAnchorWorkflowCopy(topology: TopologyId, status: string, reasons: string[]) {
+  if ((topology === 'bass_reflex' || topology === 'transmission_line') && status === 'compilable_anchor') {
+    return { title: topology === 'bass_reflex' ? 'Bass Reflex simulation' : 'Uniform transmission line',
+      detail: 'SPL combines driver and mouth pressures at 1 m in half-space. Ideal lossless enclosure; external comparison pending.',
+      runLabel: 'Run simulation', resetLabel: 'Reset template' };
+  }
   if (topology === 'closed_box' && status === 'compilable_anchor') {
     return {
       title: 'Closed Box simulation',
@@ -539,6 +439,8 @@ export default function App() {
     (topology: TopologyId) => {
       const nextSeed = seedTemplateGraph(topology);
       setSelectedTopology(topology);
+      setLoadedCanonicalModelOverride(null);
+      setLoadError(null);
       setSeedGraph(cloneGraphSnapshot(nextSeed));
       replaceWorkingGraph(nextSeed, { recordHistory: false, resetHistory: true });
       setSelectedNodeId(nextSeed.nodes[0]?.id ?? null);
@@ -745,7 +647,11 @@ export default function App() {
       return;
     }
 
-    const frequenciesHz = Array.from({ length: 150 }, (_, index) => 20 * Math.pow(1000 / 20, index / 149));
+    const topology = (canonicalModel.meta as Record<string, unknown> | undefined)?.studio_topology;
+    const extendedSweep = topology === 'bass_reflex' || topology === 'transmission_line';
+    const pointCount = extendedSweep ? 600 : 150;
+    const startHz = extendedSweep ? 10 : 20;
+    const frequenciesHz = Array.from({ length: pointCount }, (_, index) => startHz * Math.pow(1000 / startHz, index / (pointCount - 1)));
     const runCanonicalModel = canonicalModel;
     const runCanonicalModelSnapshotKey = stableSnapshotKey(runCanonicalModel);
 
@@ -845,58 +751,32 @@ export default function App() {
       );
     }
 
-    if (selectedTopology === 'bass_reflex' && driverNode && volumeNode && radiatorNode && portNode) {
-      return (
-        <>
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>Bass Reflex Seed Editor</div>
-            <div style={{ fontSize: 13, color: '#475569', lineHeight: 1.5 }}>
-              Bass Reflex remains a seeded and inspectable canonical-model path, but it is still gated in the current truthful line.
-            </div>
-          </div>
-
-          <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 16 }}>
-            <div style={{ fontWeight: 700, marginBottom: 12 }}>Driver</div>
-            <LabeledInput
-              label="Label"
-              value={driverNode.data.label ?? ''}
-              onChange={(value) => patchNodeData(driverNode.id, { label: value || 'Driver' })}
-            />
-            <LabeledInput
-              label="Re"
-              value={driverNode.data.Re ?? 5.0}
-              suffix="ohm"
-              onChange={(value) => patchNodeData(driverNode.id, { Re: parsePositiveNumber(value, 5.0) })}
-            />
-          </div>
-
-          <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 16, marginTop: 16 }}>
-            <div style={{ fontWeight: 700, marginBottom: 12 }}>Rear Chamber</div>
-            <LabeledInput
-              label="Volume"
-              value={volumeNode.data.Vb ?? 65}
-              suffix="liters"
-              onChange={(value) => patchNodeData(volumeNode.id, { Vb: parsePositiveNumber(value, 65) })}
-            />
-          </div>
-
-          <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 16, marginTop: 16 }}>
-            <div style={{ fontWeight: 700, marginBottom: 12 }}>Port</div>
-            <LabeledInput
-              label="Port Area"
-              value={portNode.data.areaCm2 ?? 120}
-              suffix="cm²"
-              onChange={(value) => patchNodeData(portNode.id, { areaCm2: parsePositiveNumber(value, 120) })}
-            />
-            <LabeledInput
-              label="Port Length"
-              value={portNode.data.lengthCm ?? 20}
-              suffix="cm"
-              onChange={(value) => patchNodeData(portNode.id, { lengthCm: parsePositiveNumber(value, 20) })}
-            />
-          </div>
-        </>
-      );
+    if ((selectedTopology === 'bass_reflex' || selectedTopology === 'transmission_line') && driverNode && portNode) {
+      const isLine = selectedTopology === 'transmission_line';
+      return <>
+        <h3>{isLine ? 'Transmission Line' : 'Bass Reflex'} parameters</h3>
+        <p>Reference TS driver. Ideal lossless model; no stuffing, leakage or port friction.
+          {isLine ? ' Uniform line, driver at its entrance; mouth area equals line area.' : ' Port mouth area follows port area.'}</p>
+        <h4>Driver</h4>
+        {[
+          ['Re', 'ohm', 5.8], ['Le', 'mH', 0.35], ['Fs', 'Hz', 34], ['Qes', '', 0.42],
+          ['Qms', '', 4.1], ['Vas', 'liters', 55], ['Sd', 'cm²', 132], ['source_voltage_rms', 'V RMS', 2.83],
+        ].map(([key, unit, fallback]) => <LabeledInput key={String(key)}
+          label={key === 'source_voltage_rms' ? 'Drive voltage' : String(key)} suffix={String(unit)}
+          value={driverNode.data[String(key)] ?? fallback}
+          onChange={value => {
+            const numeric = parsePositiveNumber(value, Number(fallback));
+            patchNodeData(driverNode.id, { [String(key)]: numeric });
+          }} />)}
+        {volumeNode && <LabeledInput label="Box volume" suffix="liters" value={volumeNode.data.Vb}
+          onChange={value => patchNodeData(volumeNode.id, { Vb: parsePositiveNumber(value, 28) })} />}
+        <h4>{isLine ? 'Uniform line' : 'Port'}</h4>
+        <LabeledInput label={isLine ? 'Line area' : 'Port area'} suffix="cm²" value={portNode.data.areaCm2}
+          onChange={value => patchNodeData(portNode.id, { areaCm2: parsePositiveNumber(value, isLine ? 132 : 24) })} />
+        <LabeledInput label={isLine ? 'Line length' : 'Port length'} suffix="cm" value={portNode.data.lengthCm}
+          onChange={value => patchNodeData(portNode.id, { lengthCm: parsePositiveNumber(value, isLine ? 160 : 18) })} />
+        <p>Front radiation area follows driver Sd. Mouth radiation uses an unflanged piston.</p>
+      </>;
     }
 
     return (
@@ -988,15 +868,15 @@ export default function App() {
           />
           <TopologyCard
             title="Bass Reflex"
-            subtitle="Seeded but gated"
-            status="Canonical model path visible, runtime still gated"
+            subtitle="Vented enclosure"
+            status="Editable box and port; combined SPL"
             active={selectedTopology === 'bass_reflex'}
             onClick={() => handleTopologySelect('bass_reflex')}
           />
           <TopologyCard
             title="Transmission Line"
-            subtitle="Seed only"
-            status="Not runnable in current truthful line"
+            subtitle="Uniform, unstuffed line"
+            status="Editable length and area; combined SPL"
             active={selectedTopology === 'transmission_line'}
             onClick={() => handleTopologySelect('transmission_line')}
           />
@@ -1071,7 +951,7 @@ export default function App() {
             <div style={{ fontSize: 12, color: '#475569', lineHeight: 1.5, marginBottom: 10 }}>
               The graph is the working object. Structural edits affect the working graph only, while Reset to Seed restores the stored template seed snapshot.
             </div>
-            <Inspector selectedNode={selectedCanvasNode} updateNodeData={updateNodeData} />
+            {selectedTopology === 'closed_box' ? <Inspector selectedNode={selectedCanvasNode} updateNodeData={updateNodeData} /> : <p>Use the parameter fields above. The mouth termination is included automatically.</p>}
           </details>
         </div>
       </div>

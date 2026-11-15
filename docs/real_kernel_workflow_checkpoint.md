@@ -158,3 +158,42 @@ test-client deprecation warnings remain open.
 Update instructions: pull the Studio branch, run npm --prefix frontend ci,
 restart Vite and refresh the page. Kernel/backend changes are not required for
 this checkpoint. Next: finish dependency remediation and browser/runtime checks.
+
+## 2026-11-15 — runnable Bass Reflex and uniform TL
+
+User confirmed the Closed Box edit/save/load/rerun workflow. At their request,
+Studio now supports two additional fixed, editable templates:
+
+- Bass Reflex: TS driver, chamber, lumped port and unflanged mouth.
+- Uniform TL: TS driver at the line entrance, 16-segment lossless uniform
+  waveguide and unflanged mouth. No stuffing, taper or offset-driver support.
+
+Both expose phase-aware combined SPL through kernel `spl_sum`, separate driver
+and outlet SPL, electrical impedance magnitude/phase and cone displacement.
+The new sweeps use 600 logarithmic samples, 10–1000 Hz. The lower range includes
+the lower BR resonance. Driver Sd sets front radiation area; line/port area
+sets mouth area. Source voltage is editable. The defaults use a fully explicit
+synthetic TS reference driver rather than implying measured 12NW100 data.
+
+Fixed BR and TL structures with positive numeric parameters are runnable;
+arbitrary wiring changes remain blocked. Horn remains unavailable. Topology
+selection now explicitly exits a loaded-model override to prevent running the
+previous loaded file when a new topology is selected.
+
+Corrected the BR translator's `areaCm2` / `lengthCm` mismatch and removed label-
+based topology selection. Moved templates into a shared module used by tests.
+Kept source/result ownership, stale-state and save/load behavior.
+
+Validation: production TypeScript/Vite build; graph gate regressions for CB,
+BR and TL; SPL-selection tests; live Python backend + frontend runner workflow
+for all three topologies; nine Python tests including independent lumped/ABCD
+network comparisons for both new defaults. Existing Vite bundle-size warning
+and testclient deprecation remain. No dependency changes in this patch.
+Browser automation remains blocked by the workspace Chromium socket restriction;
+no claim of a new visual browser test. User Chromebook check and independent
+Hornresp/Akabak comparison remain outstanding. Exact JSON and CSV fixtures plus
+comparison assumptions are in `examples/studio-comparison/`.
+
+Next: reconcile external reference results, add suitable loss/termination
+controls based on that evidence, and then taper/offset TL support. No claim of
+arbitrary topology support or release readiness.

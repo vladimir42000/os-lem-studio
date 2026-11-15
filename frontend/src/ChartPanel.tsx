@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import ReactECharts from 'echarts-for-react';
 import { selectSplSeries } from './chartSeries';
 
-type ObservableId = 'spl' | 'impedance' | 'phase' | 'displacement' | 'group_delay';
+type ObservableId = 'spl' | 'impedance' | 'phase' | 'displacement' | 'group_delay' | 'spl_front' | 'spl_port' | 'spl_mouth';
 
 type ObservableOption = {
   id: ObservableId;
@@ -60,11 +60,15 @@ function buildObservableOptions(simulationData: any): ObservableOption[] {
   return [
     {
       id: 'spl',
-      label: 'SPL',
+      label: Array.isArray(series.spl_sum) ? 'SPL — combined' : 'SPL',
       unit: 'dB',
       values: splValues,
       reason: splValues.length > 0 ? undefined : 'No trusted SPL series is available in the current result.',
     },
+    ...(['spl_front', 'spl_port', 'spl_mouth'] as const)
+      .filter(id => Array.isArray(series.spl_sum) && Array.isArray(series[id]))
+      .map(id => ({ id, label: id === 'spl_front' ? 'SPL — driver' : id === 'spl_port' ? 'SPL — port' : 'SPL — line mouth',
+        unit: 'dB', values: toNumericArray(series[id]) })),
     {
       id: 'impedance',
       label: 'Impedance Magnitude',
@@ -74,7 +78,7 @@ function buildObservableOptions(simulationData: any): ObservableOption[] {
     },
     {
       id: 'phase',
-      label: 'Phase',
+      label: 'Impedance phase',
       unit: 'deg',
       values: phaseValues,
       reason: phaseValues.length > 0 ? undefined : 'No complex impedance data is available to derive phase.',

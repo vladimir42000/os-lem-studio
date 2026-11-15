@@ -1,0 +1,89 @@
+{
+  "meta": {
+    "name": "studio_simulation",
+    "radiation_space": "2pi",
+    "studio_topology": "bass_reflex"
+  },
+  "driver": {
+    "id": "drv1",
+    "model": "ts_classic",
+    "Re": "5.8 ohm",
+    "Le": "0.35 mH",
+    "Fs": "34 Hz",
+    "Qes": 0.42,
+    "Qms": 4.1,
+    "Vas": "55 l",
+    "Sd": "132 cm2",
+    "source_voltage_rms": 2.83,
+    "node_front": "front",
+    "node_rear": "rear"
+  },
+  "elements": [
+    {
+      "id": "rear_box",
+      "type": "volume",
+      "node": "rear",
+      "value": "28 l"
+    },
+    {
+      "id": "front_rad",
+      "type": "radiator",
+      "node": "front",
+      "model": "infinite_baffle_piston",
+      "area": "132 cm2"
+    },
+    {
+      "id": "vent_duct",
+      "type": "duct",
+      "node_a": "rear",
+      "node_b": "vent_mouth",
+      "area": "24 cm2",
+      "length": "18 cm"
+    },
+    {
+      "id": "port_rad",
+      "type": "radiator",
+      "node": "vent_mouth",
+      "model": "unflanged_piston",
+      "area": "24 cm2"
+    }
+  ],
+  "observations": [
+    {
+      "id": "zin",
+      "type": "input_impedance",
+      "target": "drv1"
+    },
+    {
+      "id": "spl_front",
+      "type": "spl",
+      "target": "front_rad",
+      "distance": "1 m"
+    },
+    {
+      "id": "spl_port",
+      "type": "spl",
+      "target": "port_rad",
+      "distance": "1 m"
+    },
+    {
+      "id": "cone_displacement",
+      "type": "cone_displacement",
+      "target": "drv1"
+    },
+    {
+      "id": "spl_sum",
+      "type": "spl_sum",
+      "terms": [
+        {
+          "target": "front_rad",
+          "distance": "1 m"
+        },
+        {
+          "target": "port_rad",
+          "distance": "1 m"
+        }
+      ]
+    }
+  ]
+}

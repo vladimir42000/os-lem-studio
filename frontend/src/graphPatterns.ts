@@ -1,6 +1,6 @@
 import type { Edge as ReactFlowEdge, Node as ReactFlowNode } from 'reactflow';
 
-export type PrimitiveType = 'driver' | 'volume' | 'radiator' | 'duct';
+export type PrimitiveType = 'driver' | 'volume' | 'radiator' | 'duct' | 'waveguide_1d';
 export type PatternRuntimeClass = 'validated_anchor' | 'seeded_gated';
 
 export interface RequiredConnection {
@@ -25,7 +25,7 @@ export interface GraphPatternMatchResult {
   reasons: string[];
 }
 
-const KNOWN_PRIMITIVE_TYPES: PrimitiveType[] = ['driver', 'volume', 'radiator', 'duct'];
+const KNOWN_PRIMITIVE_TYPES: PrimitiveType[] = ['driver', 'volume', 'radiator', 'duct', 'waveguide_1d'];
 
 export const CLOSED_BOX_ANCHOR_PATTERN: GraphPattern = {
   id: 'closed_box_anchor',
@@ -42,9 +42,9 @@ export const CLOSED_BOX_ANCHOR_PATTERN: GraphPattern = {
 
 export const BASS_REFLEX_SEEDED_PATTERN: GraphPattern = {
   id: 'bass_reflex_seeded',
-  label: 'Bass Reflex Seeded Path',
-  runtimeClass: 'seeded_gated',
-  description: 'Seeded but gated motif consisting of driver + rear volume + front radiator + duct/port path.',
+  label: 'Bass Reflex',
+  runtimeClass: 'validated_anchor',
+  description: 'Supported fixed motif consisting of driver + rear volume + front radiator + duct/port path.',
   requiredNodeTypes: ['driver', 'volume', 'radiator', 'duct'],
   allowedNodeTypes: ['driver', 'volume', 'radiator', 'duct'],
   requiredConnections: [
@@ -54,9 +54,21 @@ export const BASS_REFLEX_SEEDED_PATTERN: GraphPattern = {
   ],
 };
 
+export const TRANSMISSION_LINE_PATTERN: GraphPattern = {
+  id: 'transmission_line', label: 'Uniform transmission line', runtimeClass: 'validated_anchor',
+  description: 'Driver at the closed end of a uniform line with an open radiating mouth.',
+  requiredNodeTypes: ['driver', 'waveguide_1d', 'radiator'],
+  allowedNodeTypes: ['driver', 'waveguide_1d', 'radiator'],
+  requiredConnections: [
+    { sourceType: 'driver', targetType: 'waveguide_1d' },
+    { sourceType: 'driver', targetType: 'radiator' },
+  ],
+};
+
 export const STUDIO_GRAPH_PATTERNS: GraphPattern[] = [
   CLOSED_BOX_ANCHOR_PATTERN,
   BASS_REFLEX_SEEDED_PATTERN,
+  TRANSMISSION_LINE_PATTERN,
 ];
 
 export function getPrimitiveType(node: ReactFlowNode | null | undefined): PrimitiveType | null {
@@ -73,7 +85,7 @@ export function countPrimitiveTypes(nodes: ReactFlowNode[]): Record<PrimitiveTyp
       }
       return counts;
     },
-    { driver: 0, volume: 0, radiator: 0, duct: 0 },
+    { driver: 0, volume: 0, radiator: 0, duct: 0, waveguide_1d: 0 },
   );
 }
 

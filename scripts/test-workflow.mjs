@@ -50,3 +50,42 @@ for (const [fetchImpl, pattern] of [
 }
 await assert.rejects(runSimulationThin({...options,canonicalModel:{}}));
 console.log('PASS: real-kernel run, edit/rerun, JSON save/load round trip, result ownership, and failure handling.');
+const {bassReflexTemplate,transmissionLineTemplate}=await load('topologyTemplates');
+for(const [name,template] of [['bass_reflex',bassReflexTemplate],['transmission_line',transmissionLineTemplate]]) {
+  const canonical=buildModelDict(template.nodes,template.edges);
+  assert.equal(canonical.meta.studio_topology,name);
+  const frequencyGrid=Array.from({length:600},(_,i)=>10*100**(i/599));
+  const run=canonicalModel=>runSimulationThin({...options,canonicalModel,frequenciesHz:frequencyGrid});
+  const baseline=await run(canonical);
+  for(const key of ['spl_sum','spl_front',name==='bass_reflex'?'spl_port':'spl_mouth']) {
+    assert.equal(baseline.series[key].length,600);
+    assert(baseline.series[key].every(Number.isFinite));
+  }
+  assert(baseline.series.spl_sum.some((v,i)=>Math.abs(v-baseline.series.spl_front[i])>1));
+  const saved=JSON.parse(JSON.stringify(canonical));
+  assert.deepEqual((await run(saved)).series,baseline.series);
+  const renamed=structuredClone(template);renamed.nodes.forEach(n=>n.data.label='vent port');
+  assert.deepEqual(buildModelDict(renamed.nodes,renamed.edges),canonical,'display labels must not affect acoustics');
+  for(const field of ['areaCm2','lengthCm']) {
+    const changed=structuredClone(template);
+    const duct=changed.nodes.find(n=>['duct','waveguide_1d'].includes(n.data.type));
+    duct.data[field]*=1.5;
+    const result=await run(buildModelDict(changed.nodes,changed.edges));
+    assert(result.properties.zin_mag_ohm.some((v,i)=>Math.abs(v-baseline.properties.zin_mag_ohm[i])>0.1),`${name} ${field} must affect impedance`);
+    assert(result.series.spl_sum.some((v,i)=>Math.abs(v-baseline.series.spl_sum[i])>0.1));
+  }
+  const twice=structuredClone(canonical);twice.driver.source_voltage_rms*=2;
+  const doubled=await run(twice);
+  doubled.series.spl_sum.forEach((v,i)=>assert(Math.abs(v-baseline.series.spl_sum[i]-20*Math.log10(2))<1e-8));
+  doubled.properties.zin_mag_ohm.forEach((v,i)=>assert(Math.abs(v-baseline.properties.zin_mag_ohm[i])<1e-8));
+  // Export exact defaults for independent Hornresp/Akabak checks, only on request.
+  if(process.env.STUDIO_EXPORT_REFERENCE_DIR) {
+    const {mkdirSync,writeFileSync}=await import('node:fs');
+    const folder=process.env.STUDIO_EXPORT_REFERENCE_DIR;mkdirSync(folder,{recursive:true});
+    writeFileSync(`${folder}/${name}.json`,JSON.stringify(canonical,null,2)+'\n');
+    const outlet=name==='bass_reflex'?'spl_port':'spl_mouth';
+    const rows=frequencyGrid.map((f,i)=>[f,baseline.series.spl_sum[i],baseline.series.spl_front[i],baseline.series[outlet][i],baseline.properties.zin_mag_ohm[i],Math.atan2(baseline.properties.zin_complex_ohm[i].imag,baseline.properties.zin_complex_ohm[i].real)*180/Math.PI].join(','));
+    writeFileSync(`${folder}/${name}.csv`,['frequency_hz,spl_combined_db,spl_driver_db,spl_outlet_db,impedance_ohm,impedance_phase_deg',...rows].join('\n')+'\n');
+  }
+  console.log(`PASS: ${name} real-kernel combined SPL, geometry sensitivity, label independence, save/load, voltage scaling.`);
+}
