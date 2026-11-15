@@ -231,3 +231,27 @@ Added exact JSON/CSV cases `tl_taper`, `tl_offset`, `tl_stuffed`, `tl_combined` 
 examples/studio-comparison with comparison instructions. External Hornresp
 validation is pending; user plans to run it. Material-based stuffing prediction,
 partial stuffing and alternative taper laws remain future work.
+
+## 2026-11-15 — Results parameters and memorised comparisons
+
+Implemented the agreed first tuning step. Every supported numeric model field
+has a Show in Results checkbox. Results edits share graph state and recalculate
+on committed input with a debounce; obsolete responses cannot overwrite newer
+edits or recalled sessions. Replaced the duplicate legacy advanced controls,
+which exposed unused explicit-driver fields, with one supported parameter list.
+
+Up to nine complete model/result memories have incrementing labels, recall,
+compare selection, deletion and a single independent dotted reference. Stored
+curves keep their own frequency grids, and ECharts replaces removed series.
+Stale current results are labelled and cannot be memorised. Complete sessions
+persist in browser storage and export/import as versioned JSON; existing
+model-only JSON remains supported. Loaded canonical-file models can be compared
+and recalled but their graph parameter fields remain disabled.
+
+Validation covers pure memory/session/overlay logic, React DOM interactions with
+mocked rendering and responses (including a delayed-response race and refresh),
+and real-kernel session round trips. Existing Python, graph, chart and production
+build checks also run. No dependencies or kernel changes. Chromium visual testing
+remains unavailable here; the DOM test does not claim chart/layout verification.
+See results_tuning.md for usage and test commands. Pointer-pad tuning and
+per-gesture Undo remain the next step.

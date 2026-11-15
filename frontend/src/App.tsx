@@ -1,5 +1,9 @@
+import ParameterPanel from './ParameterPanel';
+import MemoryPanel from './MemoryPanel';
+import { parametersFor, type Parameter } from './parameters';
+import { clone, memorise, recall, parseSession, SESSION_KEY, type TuningSession, type ResultRecord, type Workspace } from './tuningState';
 import { closedBoxTemplate, bassReflexTemplate, transmissionLineTemplate } from './topologyTemplates';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactFlow, {
   Background,
   Controls,
@@ -15,7 +19,6 @@ import type {
   NodeChange,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import Inspector from './Inspector';
 import ChartPanel from './ChartPanel';
 import SimulationWarningsSurface from './SimulationWarningsSurface';
 import CanonicalModelInspection from './CanonicalModelInspection';
@@ -126,11 +129,6 @@ function toCanvasEdge(edge: ReactFlowEdge): CanvasEdge {
   };
 }
 
-function parsePositiveNumber(raw: string, fallback: number): number {
-  const value = Number(raw);
-  return Number.isFinite(value) && value > 0 ? value : fallback;
-}
-
 function stableSnapshotKey(value: unknown): string {
   try {
     return JSON.stringify(value) ?? 'null';
@@ -180,38 +178,6 @@ function TopologyCard({
       <div style={{ fontSize: 13, color: '#475569', marginBottom: 8 }}>{subtitle}</div>
       <div style={{ fontSize: 12, color: active ? '#1d4ed8' : '#64748b' }}>{status}</div>
     </button>
-  );
-}
-
-function LabeledInput({
-  label,
-  value,
-  suffix,
-  onChange,
-}: {
-  label: string;
-  value: string | number;
-  suffix?: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label style={{ display: 'block', marginBottom: 14 }}>
-      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>{label}</div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <input
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          style={{
-            flex: 1,
-            padding: '8px 10px',
-            borderRadius: 8,
-            border: '1px solid #cbd5e1',
-            background: '#fff',
-          }}
-        />
-        {suffix ? <span style={{ fontSize: 12, color: '#64748b' }}>{suffix}</span> : null}
-      </div>
-    </label>
   );
 }
 
@@ -335,21 +301,37 @@ function safeAssessGraphCompilability(args: {
 
 const initialSeedGraph = seedTemplateGraph('closed_box');
 
+function initialTuningSession(): { session: TuningSession | null; error: string } {
+  try { const text = localStorage.getItem(SESSION_KEY); return { session: text ? parseSession(text) : null, error: '' }; }
+  catch { return { session: null, error: 'Saved session could not be restored. Load a session file if you have one.' }; }
+}
+
 export default function App() {
+  const [initial] = useState(initialTuningSession);
+  const restored = initial.session;
+  const [pins,setPins] = useState<string[]>(restored?.workspace.pins ?? []);
+  const [memories,setMemories] = useState(restored?.memories ?? []);
+  const [nextId,setNextId] = useState(restored?.nextId ?? 1);
+  const [referenceId,setReferenceId] = useState<number | null>(restored?.referenceId ?? null);
+  const [sessionError,setSessionError] = useState(initial.error);
+  const [storageError,setStorageError] = useState('');
+  const [resultRecord,setResultRecord] = useState<ResultRecord | null>(restored?.result ?? null);
+  const [autoRecalculate,setAutoRecalculate] = useState(true);
+  const attemptedKey = useRef('');
   const [activeView, setActiveView] = useState<'model' | 'results' | 'files'>('model');
-  const [selectedTopology, setSelectedTopology] = useState<TopologyId>('closed_box');
-  const [seedGraph, setSeedGraph] = useState<GraphSnapshot>(() => cloneGraphSnapshot(initialSeedGraph));
-  const [nodes, setNodes] = useState<ReactFlowNode[]>(() => cloneGraphSnapshot(initialSeedGraph).nodes);
-  const [edges, setEdges] = useState<ReactFlowEdge[]>(() => cloneGraphSnapshot(initialSeedGraph).edges);
+  const [selectedTopology, setSelectedTopology] = useState<TopologyId>(restored?.workspace.topology ?? 'closed_box');
+  const [seedGraph, setSeedGraph] = useState<GraphSnapshot>(() => cloneGraphSnapshot(restored?.workspace.seed ?? initialSeedGraph));
+  const [nodes, setNodes] = useState<ReactFlowNode[]>(() => cloneGraphSnapshot(restored?.workspace.graph ?? initialSeedGraph).nodes);
+  const [edges, setEdges] = useState<ReactFlowEdge[]>(() => cloneGraphSnapshot(restored?.workspace.graph ?? initialSeedGraph).edges);
   const [historyState, setHistoryState] = useState<HistoryState>(() => ({
-    snapshots: [cloneGraphSnapshot(initialSeedGraph)],
+    snapshots: [cloneGraphSnapshot(restored?.workspace.graph ?? initialSeedGraph)],
     index: 0,
   }));
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(initialSeedGraph.nodes[0]?.id ?? null);
-  const [simulationResult, setSimulationResult] = useState<any>(null);
-  const [latestResultCanonicalModelSnapshotKey, setLatestResultCanonicalModelSnapshotKey] = useState<string | null>(null);
-  const [latestResultSourceKind, setLatestResultSourceKind] = useState<CanonicalModelSourceKind | null>(null);
-  const [loadedCanonicalModelOverride, setLoadedCanonicalModelOverride] = useState<Record<string, unknown> | null>(null);
+  const [simulationResult, setSimulationResult] = useState<any>(restored?.result?.data ?? null);
+  const [latestResultCanonicalModelSnapshotKey, setLatestResultCanonicalModelSnapshotKey] = useState<string | null>(restored?.result ? stableSnapshotKey(restored.result.model) : null);
+  const [latestResultSourceKind, setLatestResultSourceKind] = useState<CanonicalModelSourceKind | null>(restored?.result?.source ?? null);
+  const [loadedCanonicalModelOverride, setLoadedCanonicalModelOverride] = useState<Record<string, unknown> | null>(restored?.workspace.override ?? null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
   const [isSimulating, setIsSimulating] = useState(false);
@@ -367,6 +349,19 @@ export default function App() {
   const canonicalModel = loadedCanonicalModelOverride ?? graphDerivedCanonicalModel;
   const canonicalModelSnapshotKey = useMemo(() => stableSnapshotKey(canonicalModel), [canonicalModel]);
   const currentCanonicalModelSourceKind: CanonicalModelSourceKind = loadedCanonicalModelOverride ? 'loaded-override' : 'graph-derived';
+  const currentIdentity = `${currentCanonicalModelSourceKind}:${canonicalModelSnapshotKey}`;
+  const identityRef = useRef(currentIdentity);
+  identityRef.current = currentIdentity;
+  const generation = useRef(0);
+  const parameters = useMemo(() => parametersFor(nodes, selectedTopology), [nodes, selectedTopology]);
+  const workspace: Workspace = { topology: selectedTopology, graph: currentGraph, seed: seedGraph, override: loadedCanonicalModelOverride, pins };
+  const session: TuningSession = { version: 1, workspace, result: resultRecord, memories, nextId, referenceId };
+  const sessionText = JSON.stringify(session);
+  useEffect(() => {
+    try { localStorage.setItem(SESSION_KEY,sessionText); setStorageError(''); }
+    catch { setStorageError('Browser storage is unavailable or full. Use Save tuning session to keep your work.'); }
+  }, [sessionText]);
+
   const runnerStateTruth = useMemo(
     () =>
       computeRunnerStateTruth({
@@ -493,14 +488,6 @@ export default function App() {
     setSelectedNodeId(selectedNodes[0]?.id ?? null);
   }, []);
 
-  const updateNodeData = useCallback(
-    (id: string, newData: any) => {
-      const nextNodes = nodes.map((node) => (node.id === id ? { ...node, data: newData } : node));
-      replaceWorkingGraph({ nodes: nextNodes, edges }, { recordHistory: true });
-    },
-    [nodes, edges, replaceWorkingGraph],
-  );
-
   const patchNodeData = useCallback(
     (id: string, patch: Record<string, unknown>) => {
       const nextNodes = nodes.map((node) =>
@@ -510,6 +497,28 @@ export default function App() {
     },
     [nodes, edges, replaceWorkingGraph],
   );
+
+  const changeParameter = (p: Parameter, value: number) => {
+    patchNodeData(p.nodeId, { [p.key]: value });
+    setRunError(null);
+  };
+  const togglePin = (id: string) => setPins(old=>old.includes(id)?old.filter(x=>x!==id):[...old,id]);
+  const changeMemories = (s: TuningSession) => { setMemories(s.memories); setNextId(s.nextId); setReferenceId(s.referenceId); };
+  const restoreSession = (s: TuningSession) => {
+    generation.current += 1;
+    const w = clone(s.workspace);
+    setSelectedTopology(w.topology);setSeedGraph(w.seed);setPins(w.pins);setLoadedCanonicalModelOverride(w.override);
+    replaceWorkingGraph(w.graph,{recordHistory:false,resetHistory:true});
+    setSelectedNodeId(w.graph.nodes[0]?.id ?? null);
+    setResultRecord(clone(s.result));setSimulationResult(s.result?.data ?? null);
+    setLatestResultCanonicalModelSnapshotKey(s.result ? stableSnapshotKey(s.result.model) : null);
+    setLatestResultSourceKind(s.result?.source ?? null);
+    changeMemories(s);setRunError(null);setLoadError(null);setSessionError('');setActiveView('results');attemptedKey.current='';
+  };
+  const remember = () => {
+    try { changeMemories(memorise(session,canonicalModel));setSessionError(''); }
+    catch(error){setSessionError(error instanceof Error ? error.message : 'Cannot memorise result.');}
+  };
 
   const handleUndo = useCallback(() => {
     setHistoryState((prev) => {
@@ -606,31 +615,6 @@ export default function App() {
     setSelectedNodeId(splitNodeId);
   }, [nodes, edges, selectedNodeId, replaceWorkingGraph]);
 
-  const selectedCanvasNode = useMemo<CanvasNode | null>(() => {
-    const rfNode = nodes.find((node) => node.id === selectedNodeId);
-    return rfNode ? toCanvasNode(rfNode) : null;
-  }, [nodes, selectedNodeId]);
-
-  const driverNode = useMemo<CanvasNode | null>(() => {
-    const rfNode = nodes.find((node) => String(node.id) === 'node_driver_1');
-    return rfNode ? toCanvasNode(rfNode) : null;
-  }, [nodes]);
-
-  const volumeNode = useMemo<CanvasNode | null>(() => {
-    const rfNode = nodes.find((node) => String(node.id) === 'node_volume_1');
-    return rfNode ? toCanvasNode(rfNode) : null;
-  }, [nodes]);
-
-  const radiatorNode = useMemo<CanvasNode | null>(() => {
-    const rfNode = nodes.find((node) => String(node.id) === 'node_radiator_1');
-    return rfNode ? toCanvasNode(rfNode) : null;
-  }, [nodes]);
-
-  const portNode = useMemo<CanvasNode | null>(() => {
-    const rfNode = nodes.find((node) => String(node.id) === 'node_port_1');
-    return rfNode ? toCanvasNode(rfNode) : null;
-  }, [nodes]);
-
   const handleLoadCanonicalModel = useCallback((model: Record<string, unknown>) => {
     setLoadedCanonicalModelOverride(model);
     setLoadError(null);
@@ -645,7 +629,7 @@ export default function App() {
     setLoadError(null);
   }, []);
 
-  const handleRunSimulationThin = useCallback(async () => {
+  const handleRunSimulationThin = useCallback(async (automatic = false) => {
     if (simulationInFlight.current) return;
     if (!canRunSimulation) {
       setRunError(graphAssessment.reasons?.[0] ?? 'Simulation is currently gated by compiler-boundary truth.');
@@ -657,7 +641,10 @@ export default function App() {
     const pointCount = extendedSweep ? 600 : 150;
     const startHz = extendedSweep ? 10 : 20;
     const frequenciesHz = Array.from({ length: pointCount }, (_, index) => startHz * Math.pow(1000 / startHz, index / (pointCount - 1)));
-    const runCanonicalModel = canonicalModel;
+    const runCanonicalModel = clone(canonicalModel);
+    const runIdentity = currentIdentity;
+    const runGeneration = generation.current;
+    attemptedKey.current = runIdentity;
     const runCanonicalModelSnapshotKey = stableSnapshotKey(runCanonicalModel);
 
     simulationInFlight.current = true;
@@ -668,139 +655,30 @@ export default function App() {
         canonicalModel: runCanonicalModel,
         frequenciesHz,
       });
+      if (identityRef.current !== runIdentity || generation.current !== runGeneration) return;
+      setResultRecord({model:runCanonicalModel,data:result,source:currentCanonicalModelSourceKind});
       setSimulationResult(result);
-      setActiveView('results');
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+      if (!automatic) { setActiveView('results'); window.scrollTo({ top: 0, behavior: 'smooth' }); }
       // lifecycle marker: latest result ownership snapshot
       setLatestResultCanonicalModelSnapshotKey(runCanonicalModelSnapshotKey);
       setLatestResultSourceKind(currentCanonicalModelSourceKind);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Thin runner failed.';
-      setRunError(message);
+      if (identityRef.current === runIdentity && generation.current === runGeneration) setRunError(message);
     } finally {
       simulationInFlight.current = false;
       setIsSimulating(false);
     }
-  }, [canRunSimulation, canonicalModel, currentCanonicalModelSourceKind, graphAssessment.reasons]);
+  }, [canRunSimulation, canonicalModel, currentCanonicalModelSourceKind, graphAssessment.reasons, currentIdentity]);
 
-  const renderTopologyEditor = () => {
-    if (selectedTopology === 'closed_box' && driverNode && volumeNode && radiatorNode) {
-      return (
-        <>
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>Closed Box parameters</div>
-            <div style={{ fontSize: 13, color: '#475569', lineHeight: 1.5 }}>
-              Change the parameters below, then run to update the curves.
-            </div>
-          </div>
+  useEffect(() => {
+    if (activeView !== 'results' || !autoRecalculate || !canRunSimulation || isSimulating ||
+        (simulationResult && !resultLifecycleIsStale) || attemptedKey.current === currentIdentity) return;
+    const timer = setTimeout(() => { void handleRunSimulationThin(true); }, 350);
+    return () => clearTimeout(timer);
+  }, [activeView,autoRecalculate,canRunSimulation,isSimulating,simulationResult,resultLifecycleIsStale,currentIdentity,handleRunSimulationThin]);
 
-          <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 16 }}>
-            <div style={{ fontWeight: 700, marginBottom: 12 }}>Driver</div>
-            <LabeledInput
-              label="Label"
-              value={driverNode.data.label ?? ''}
-              onChange={(value) => patchNodeData(driverNode.id, { label: value || 'Driver' })}
-            />
-            <LabeledInput
-              label="Re"
-              value={driverNode.data.Re ?? 5.0}
-              suffix="ohm"
-              onChange={(value) => patchNodeData(driverNode.id, { Re: parsePositiveNumber(value, 5.0) })}
-            />
-            <LabeledInput
-              label="Le"
-              value={driverNode.data.Le ?? 1.4}
-              suffix="mH"
-              onChange={(value) => patchNodeData(driverNode.id, { Le: parsePositiveNumber(value, 1.4) })}
-            />
-            {[
-              ['Fs', 'Hz', 34], ['Qes', '', 0.42], ['Qms', '', 4.1], ['Vas', 'liters', 55],
-            ].map(([key, unit, fallback]) => (
-              <LabeledInput key={String(key)} label={String(key)} suffix={String(unit)}
-                value={driverNode.data[String(key)] ?? fallback}
-                onChange={(value) => patchNodeData(driverNode.id, { [String(key)]: parsePositiveNumber(value, Number(fallback)) })} />
-            ))}
-            <LabeledInput
-              label="Sd"
-              value={driverNode.data.Sd ?? 531}
-              suffix="cm²"
-              onChange={(value) => patchNodeData(driverNode.id, { Sd: parsePositiveNumber(value, 531) })}
-            />
-          </div>
 
-          <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 16, marginTop: 16 }}>
-            <div style={{ fontWeight: 700, marginBottom: 12 }}>Rear Chamber</div>
-            <LabeledInput
-              label="Volume"
-              value={volumeNode.data.Vb ?? 50}
-              suffix="liters"
-              onChange={(value) => patchNodeData(volumeNode.id, { Vb: parsePositiveNumber(value, 50) })}
-            />
-          </div>
-
-          <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 16, marginTop: 16 }}>
-            <div style={{ fontWeight: 700, marginBottom: 12 }}>Front Radiation</div>
-            <LabeledInput
-              label="Label"
-              value={radiatorNode.data.label ?? ''}
-              onChange={(value) => patchNodeData(radiatorNode.id, { label: value || 'Front Radiation' })}
-            />
-            <LabeledInput
-              label="Radiating Area"
-              value={radiatorNode.data.Sd ?? 531}
-              suffix="cm²"
-              onChange={(value) => patchNodeData(radiatorNode.id, { Sd: parsePositiveNumber(value, 531) })}
-            />
-          </div>
-        </>
-      );
-    }
-
-    if ((selectedTopology === 'bass_reflex' || selectedTopology === 'transmission_line') && driverNode && portNode) {
-      const isLine = selectedTopology === 'transmission_line';
-      return <>
-        <h3>{isLine ? 'Transmission Line' : 'Bass Reflex'} parameters</h3>
-        <p>{isLine ? 'Linear-area taper with an optional offset driver and distributed stuffing attenuation. No leakage or material-density calibration.' : 'Reference TS driver. Lossless box and port; no leakage or port friction.'}</p>
-        <h4>Driver</h4>
-        {[
-          ['Re', 'ohm', 5.8], ['Le', 'mH', 0.35], ['Fs', 'Hz', 34], ['Qes', '', 0.42],
-          ['Qms', '', 4.1], ['Vas', 'liters', 55], ['Sd', 'cm²', 132], ['source_voltage_rms', 'V RMS', 2.83],
-        ].map(([key, unit, fallback]) => <LabeledInput key={String(key)}
-          label={key === 'source_voltage_rms' ? 'Drive voltage' : String(key)} suffix={String(unit)}
-          value={driverNode.data[String(key)] ?? fallback}
-          onChange={value => {
-            const numeric = parsePositiveNumber(value, Number(fallback));
-            patchNodeData(driverNode.id, { [String(key)]: numeric });
-          }} />)}
-        {volumeNode && <LabeledInput label="Box volume" suffix="liters" value={volumeNode.data.Vb}
-          onChange={value => patchNodeData(volumeNode.id, { Vb: parsePositiveNumber(value, 28) })} />}
-        <h4>{isLine ? 'Line geometry' : 'Port'}</h4>
-        <LabeledInput label={isLine ? 'Closed-end area' : 'Port area'} suffix="cm²" value={portNode.data.areaCm2}
-          onChange={value => patchNodeData(portNode.id, { areaCm2: parsePositiveNumber(value, isLine ? 132 : 24) })} />
-        <LabeledInput label={isLine ? 'Line length' : 'Port length'} suffix="cm" value={portNode.data.lengthCm}
-          onChange={value => patchNodeData(portNode.id, { lengthCm: parsePositiveNumber(value, isLine ? 160 : 18) })} />
-        {isLine && <>
-          <LabeledInput label="Mouth area" suffix="cm²" value={portNode.data.mouthAreaCm2 ?? portNode.data.areaCm2}
-            onChange={value => patchNodeData(portNode.id, { mouthAreaCm2: Number(value) })} />
-          <LabeledInput label="Driver distance from closed end" suffix="cm" value={portNode.data.driverOffsetCm ?? 0}
-            onChange={value => patchNodeData(portNode.id, { driverOffsetCm: Number(value) })} />
-          <p>Offset must be at least zero and smaller than total line length. Equal end areas give a uniform line; either expanding or contracting tapers are supported.</p>
-          <h4>Stuffing approximation</h4>
-          <LabeledInput label="Attenuation" suffix="Np/m" value={portNode.data.lossNpPerM ?? 0}
-            onChange={value => patchNodeData(portNode.id, { lossNpPerM: Number(value) })} />
-          <p>0 = no attenuation. Applied along the entire line, including the closed stub.
-            This models damping only: sound speed remains 343.2 m/s. It is not a Hornresp stuffing-density value.</p>
-        </>}
-        <p>Front radiation area follows driver Sd. Mouth radiation uses an unflanged piston.</p>
-      </>;
-    }
-
-    return (
-      <div style={{ fontSize: 13, color: '#475569', lineHeight: 1.5 }}>
-        This topology is visible as a seed direction only. It is not runnable in the current truthful line.
-      </div>
-    );
-  };
 
   return (
     <div className="studio-app">
@@ -845,7 +723,7 @@ export default function App() {
             {anchorWorkflowCopy.resetLabel}
           </button>
           <button
-            onClick={handleRunSimulationThin}
+            onClick={() => void handleRunSimulationThin()}
             disabled={!canRunSimulation || isSimulating}
             aria-busy={isSimulating}
             style={{
@@ -959,20 +837,30 @@ export default function App() {
 
         <div className="model-inspector">
           <fieldset disabled={loadedCanonicalModelOverride !== null} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
-          {renderTopologyEditor()}
+          <h3>Model parameters</h3>
+          <p>Select “Show in Results” to make parameters available beside the response graph.</p>
+          <ParameterPanel parameters={parameters} pins={pins} onPin={togglePin} onChange={changeParameter} />
+          {selectedTopology === 'transmission_line' && <p>Linear-area taper; offset must be smaller than line length. Attenuation is damping only (Np/m), with unchanged sound speed, not a material-density model.</p>}
+          {selectedTopology !== 'closed_box' && <p>Front radiation area follows driver Sd. Mouth termination is included automatically.</p>}
           </fieldset>
 
-          <details style={{ marginTop: 18, borderTop: '1px solid #e2e8f0', paddingTop: 16 }}>
-            <summary>Advanced element editor</summary>
-            <div style={{ fontSize: 12, color: '#475569', lineHeight: 1.5, marginBottom: 10 }}>
-              The graph is the working object. Structural edits affect the working graph only, while Reset to Seed restores the stored template seed snapshot.
-            </div>
-            {selectedTopology === 'closed_box' ? <Inspector selectedNode={selectedCanvasNode} updateNodeData={updateNodeData} /> : <p>Use the parameter fields above. The mouth termination is included automatically.</p>}
-          </details>
+
         </div>
       </div>
 
       {activeView === 'results' && <section className="results-workspace" aria-label="Simulation results">
+        <details className="results-tuning" open>
+          <summary>Results parameters</summary>
+          <p>Enter a value, then press Enter or leave the field to apply it. These are the same values as in Model.</p>
+          <label><input type="checkbox" checked={autoRecalculate} onChange={e=>{setAutoRecalculate(e.target.checked);attemptedKey.current='';}} />Recalculate automatically</label>
+          {loadedCanonicalModelOverride && <p>Loaded canonical model is active. Recall an editable graph memory or choose a Model template to tune graph parameters.</p>}
+          <ParameterPanel parameters={parameters} pins={pins} results disabled={!!loadedCanonicalModelOverride} onPin={togglePin} onChange={changeParameter} />
+          {!canRunSimulation && <p role="alert">{graphAssessment.reasons[0]}</p>}
+        </details>
+        <MemoryPanel session={session} canMemorise={!!simulationResult && !resultLifecycleIsStale && !isSimulating && canRunSimulation}
+          onMemorise={remember} onRecall={id=>restoreSession(recall(session,id))} onChange={changeMemories} onLoad={restoreSession} onError={setSessionError} />
+        {sessionError && <p role="alert">{sessionError}</p>}
+        {storageError && <p role="alert">{storageError}</p>}
         <SimulationResultExportControls
           simulationResult={simulationResult}
           isStale={resultLifecycleIsStale}
@@ -982,7 +870,8 @@ export default function App() {
           <SimulationWarningsSurface warnings={currentWarnings} isStale={resultLifecycleIsStale} />
         </div>
         <div className="results-chart">
-          <ChartPanel simulationData={simulationResult} />
+          <ChartPanel simulationData={simulationResult} stale={resultLifecycleIsStale}
+            overlays={memories.filter(m=>m.compare || m.id===referenceId).map(m=>({id:m.id,label:m.label,data:m.result.data,reference:m.id===referenceId}))} />
         </div>
       </section>}
 

@@ -128,3 +128,21 @@ for(const [name,patch] of [
   }
   console.log(`PASS: ${name} live run, geometry/termination consistency, parameter sensitivity and save/load.`);
 }
+
+// Check complete tuning memories with an actual serialized kernel result.
+const {build}=require('esbuild');
+const tuningBundle=await build({entryPoints:[new URL('../frontend/src/tuningState.ts',import.meta.url).pathname],bundle:true,write:false,format:'esm',platform:'node'});
+const tuning=await import(`data:text/javascript;base64,${Buffer.from(tuningBundle.outputFiles[0].text).toString('base64')}`);
+const tuningGraph=structuredClone(bassReflexTemplate);
+const tuningModel=buildModelDict(tuningGraph.nodes,tuningGraph.edges);
+const tuningResult=await runSimulationThin({...options,canonicalModel:tuningModel});
+let session={version:1,workspace:{topology:'bass_reflex',graph:tuningGraph,seed:structuredClone(bassReflexTemplate),override:null,pins:['bass_reflex:node_volume_1:Vb']},result:{model:tuningModel,data:tuningResult,source:'graph-derived'},memories:[],nextId:1,referenceId:null};
+session=tuning.memorise(session,tuningModel);
+assert.deepEqual(tuning.parseSession(JSON.stringify(session)),session);
+session.workspace.graph.nodes.find(n=>n.data.type==='volume').data.Vb=42;
+const editedModel=buildModelDict(session.workspace.graph.nodes,session.workspace.graph.edges);
+assert.throws(()=>tuning.memorise(session,editedModel));
+session=tuning.recall(session,1);
+assert.deepEqual(session.result.data,tuningResult);
+assert.deepEqual(buildModelDict(session.workspace.graph.nodes,session.workspace.graph.edges),tuningModel);
+console.log('PASS: real-kernel complete memory/session save-load, stale-memory rejection and whole-model recall.');

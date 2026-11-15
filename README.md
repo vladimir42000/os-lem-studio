@@ -12,6 +12,13 @@ These are fixed topologies; arbitrary graph wiring remains restricted.
 [Reference cases and Hornresp/Akabak comparison instructions](examples/studio-comparison/README.md)
 include exact assumptions, JSON models and CSV curves. External validation is pending.
 
+## Results tuning
+
+Select **Show in Results** beside model parameters to edit them alongside curves.
+**Memorise** keeps up to nine complete model/results; recall, compare and a dotted
+reference curve are available. Sessions restore after refresh and can be exported.
+See [Results tuning guide](docs/results_tuning.md). Two-axis dragging is the next step.
+
 ## Quick start
 
 Assumptions:

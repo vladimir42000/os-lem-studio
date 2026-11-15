@@ -1,114 +1,20 @@
 import { useEffect, useMemo, useState } from 'react';
 import ReactECharts from 'echarts-for-react';
-import { selectSplSeries } from './chartSeries';
+import { buildObservableOptions, toNumericArray, overlaySeries, type Overlay, type ObservableId } from './chartData';
+type ObservableOption = ReturnType<typeof buildObservableOptions>[number];
 
-type ObservableId = 'spl' | 'impedance' | 'phase' | 'displacement' | 'group_delay' | 'spl_front' | 'spl_port' | 'spl_mouth';
-
-type ObservableOption = {
-  id: ObservableId;
-  label: string;
-  unit: string;
-  values: number[];
-  reason?: string;
-};
-
-interface ChartPanelProps {
-  simulationData: any;
-}
-
-function toNumericArray(value: unknown): number[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((entry) => {
-      const numeric = typeof entry === 'number' ? entry : Number(entry);
-      return Number.isFinite(numeric) ? numeric : null;
-    })
-    .filter((entry): entry is number => entry !== null);
-}
-
-function computePhaseDegrees(zinComplex: unknown): number[] {
-  if (!Array.isArray(zinComplex)) return [];
-
-  return zinComplex
-    .map((entry) => {
-      if (!entry || typeof entry !== 'object') return null;
-      const real = Number((entry as Record<string, unknown>).real);
-      const imag = Number((entry as Record<string, unknown>).imag);
-      if (!Number.isFinite(real) || !Number.isFinite(imag)) return null;
-      return (Math.atan2(imag, real) * 180) / Math.PI;
-    })
-    .filter((entry): entry is number => entry !== null);
-}
-
-function buildObservableOptions(simulationData: any): ObservableOption[] {
-  const series = simulationData?.series ?? {};
-  const properties = simulationData?.properties ?? {};
-
-  const splValues = selectSplSeries(series, simulationData?.frequencies_hz?.length ?? 0);
-
-  const impedanceValues = toNumericArray(properties.zin_mag_ohm);
-  const phaseValues = computePhaseDegrees(properties.zin_complex_ohm);
-  const displacementValues =
-    toNumericArray(properties.cone_excursion_mm).length > 0
-      ? toNumericArray(properties.cone_excursion_mm)
-      : toNumericArray(series.cone_excursion_mm);
-  const groupDelayValues =
-    toNumericArray(series.group_delay).length > 0
-      ? toNumericArray(series.group_delay)
-      : toNumericArray(properties.group_delay_ms);
-
-  return [
-    {
-      id: 'spl',
-      label: Array.isArray(series.spl_sum) ? 'SPL — combined' : 'SPL',
-      unit: 'dB',
-      values: splValues,
-      reason: splValues.length > 0 ? undefined : 'No trusted SPL series is available in the current result.',
-    },
-    ...(['spl_front', 'spl_port', 'spl_mouth'] as const)
-      .filter(id => Array.isArray(series.spl_sum) && Array.isArray(series[id]))
-      .map(id => ({ id, label: id === 'spl_front' ? 'SPL — driver' : id === 'spl_port' ? 'SPL — port' : 'SPL — line mouth',
-        unit: 'dB', values: toNumericArray(series[id]) })),
-    {
-      id: 'impedance',
-      label: 'Impedance Magnitude',
-      unit: 'Ω',
-      values: impedanceValues,
-      reason: impedanceValues.length > 0 ? undefined : 'No impedance magnitude data is available in the current result.',
-    },
-    {
-      id: 'phase',
-      label: 'Impedance phase',
-      unit: 'deg',
-      values: phaseValues,
-      reason: phaseValues.length > 0 ? undefined : 'No complex impedance data is available to derive phase.',
-    },
-    {
-      id: 'displacement',
-      label: 'Displacement',
-      unit: 'mm',
-      values: displacementValues,
-      reason: displacementValues.length > 0 ? undefined : 'Displacement is not exposed by the current result payload.',
-    },
-    {
-      id: 'group_delay',
-      label: 'Group Delay',
-      unit: 'ms',
-      values: groupDelayValues,
-      reason: groupDelayValues.length > 0 ? undefined : 'Group delay is not exposed by the current result payload.',
-    },
-  ];
-}
+interface ChartPanelProps { simulationData: any; overlays?: Overlay[]; stale?: boolean }
 
 function defaultObservableId(options: ObservableOption[]): ObservableId {
   return options.find((option) => option.values.length > 0)?.id ?? 'spl';
 }
 
-export default function ChartPanel({ simulationData }: ChartPanelProps) {
+export default function ChartPanel({ simulationData, overlays = [], stale = false }: ChartPanelProps) {
   const [selectedObservableId, setSelectedObservableId] = useState<ObservableId>('spl');
 
   const freqs = useMemo(() => toNumericArray(simulationData?.frequencies_hz), [simulationData]);
-  const observableOptions = useMemo(() => buildObservableOptions(simulationData), [simulationData]);
+  const displayData = simulationData ?? overlays[0]?.data;
+  const observableOptions = useMemo(() => buildObservableOptions(displayData), [displayData]);
   const selectedObservable = useMemo(
     () => observableOptions.find((option) => option.id === selectedObservableId) ?? observableOptions[0],
     [observableOptions, selectedObservableId],
@@ -122,7 +28,7 @@ export default function ChartPanel({ simulationData }: ChartPanelProps) {
     }
   }, [observableOptions, selectedObservableId]);
 
-  if (!simulationData) {
+  if (!simulationData && overlays.length === 0) {
     return (
       <div
         style={{
@@ -149,6 +55,9 @@ export default function ChartPanel({ simulationData }: ChartPanelProps) {
       ? `${selectedObservable.values.length} points available from current simulation result.`
       : selectedObservable?.reason ?? 'Observable is unavailable for the current result.';
 
+  const comparisonSeries = overlaySeries(overlays, selectedObservableId);
+  const missing = overlays.filter(o=>!comparisonSeries.some(s=>s.name===`${o.label}${o.reference ? ' (reference)' : ''}`));
+  const allX = [...xValues, ...comparisonSeries.flatMap(s=>s.data.map(p=>p[0]))];
   const option = {
     animation: false,
     tooltip: {
@@ -159,12 +68,13 @@ export default function ChartPanel({ simulationData }: ChartPanelProps) {
         return Number.isFinite(ordinate) ? `${ordinate.toFixed(3)} ${selectedObservable?.unit ?? ''}`.trim() : '';
       },
     },
-    grid: { left: 65, right: 28, top: 40, bottom: 90 },
+    legend: { type: 'scroll', top: 0, selectedMode: false },
+    grid: { left: 65, right: 28, top: 60, bottom: 90 },
     xAxis: {
       type: 'log',
       logBase: 10,
-      min: xValues[0],
-      max: xValues[xValues.length - 1],
+      min: allX.reduce((a,b)=>Math.min(a,b),Infinity),
+      max: allX.reduce((a,b)=>Math.max(a,b),-Infinity),
       minorTick: { show: true },
       minorSplitLine: { show: true },
       name: 'Frequency (Hz)',
@@ -187,14 +97,17 @@ export default function ChartPanel({ simulationData }: ChartPanelProps) {
       { type: 'slider', height: 22, bottom: 18 },
     ],
     series: [
-      {
-        name: selectedObservable?.label ?? 'Observable',
+      ...(simulationData ? [{
+        name: stale ? 'Current model (previous calculation)' : 'Current model',
         type: 'line',
         smooth: false,
         showSymbol: false,
         data: seriesValues.map((value, index) => [xValues[index], value]),
-        lineStyle: { width: 2 },
-      },
+        lineStyle: { width: 3, color: stale ? '#94a3b8' : '#2563eb', type: stale ? 'dashed' : 'solid' },
+        itemStyle: { color: stale ? '#94a3b8' : '#2563eb' },
+        z: 4,
+      }] : []),
+      ...comparisonSeries,
     ],
   };
 
@@ -240,7 +153,8 @@ export default function ChartPanel({ simulationData }: ChartPanelProps) {
         </label>
       </div>
 
-      {availablePointCount === 0 ? (
+      {missing.length > 0 && <p role="status">{missing.map(m=>m.label).join(', ')}: this observable is unavailable in the saved result.</p>}
+      {availablePointCount === 0 && comparisonSeries.length === 0 ? (
         <div
           style={{
             display: 'flex',
@@ -256,7 +170,7 @@ export default function ChartPanel({ simulationData }: ChartPanelProps) {
           {selectedObservable?.reason ?? 'No numeric data is available for the selected observable.'}
         </div>
       ) : (
-        <ReactECharts option={option} style={{ height: 'max(360px, 55vh)', width: '100%' }} />
+        <ReactECharts notMerge option={option} style={{ height: 'max(360px, 55vh)', width: '100%' }} />
       )}
     </div>
   );

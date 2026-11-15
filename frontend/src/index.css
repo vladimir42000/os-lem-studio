@@ -93,3 +93,18 @@ summary { cursor: pointer; font-weight: 600; }
   .workspace-tabs span { width: 100%; margin-left: 0; }
   .results-workspace { padding: 4px; }
 }
+/* Tuning controls and result memories share the model's values. */
+.parameter-row { padding: 10px 0; border-bottom: 1px solid #e2e8f0; min-width: 0; }
+.parameter-row > small { color: #64748b; }
+.parameter-row label { display: block; font-size: 13px; }
+.parameter-row input[type=number] { display: block; width: 100%; padding: 7px; margin: 4px 0; border: 1px solid #cbd5e1; border-radius: 6px; background: white; color: #172b45; }
+.parameter-row input[aria-invalid=true] { border-color: #b91c1c; }
+.parameter-row [role=alert] { color: #b91c1c; }
+.pin-label { display: flex !important; gap: 6px; align-items: center; color: #475569; }
+.tuning-parameters { display: grid; grid-template-columns: repeat(auto-fit,minmax(190px,1fr)); gap: 8px 20px; }
+.results-tuning, .memory-panel { border: 1px solid #dbe3ef; border-radius: 8px; padding: 12px; margin: 10px 0; background: #f8fafc; }
+.results-tuning p, .memory-panel p { font-size: 13px; margin: 6px 0 10px; }
+.tuning-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.memory-list { display: grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap: 10px; margin: 12px 0; }
+.memory-slot { display: flex; flex-direction: column; gap: 7px; padding: 10px; background: white; border: 1px solid #dbe3ef; border-radius: 6px; }
+.memory-slot label, .memory-slot small { font-size: 12px; }
