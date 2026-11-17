@@ -1,4 +1,5 @@
 import json
+from copy import deepcopy
 from typing import Any, Dict, List, Optional
 
 import uvicorn
@@ -100,7 +101,17 @@ def perform_simulation(request: SimulationRequest):
             detail="OS-LEM kernel is unavailable. Install it in the backend Python environment and restart the backend.",
         )
     try:
-        result = run_simulation(request.model_dict, request.frequencies_hz)
+        model = deepcopy(request.model_dict)
+        observations = model.setdefault('observations', [])
+        target = next((o['id'] for o in observations if o.get('type') == 'spl_sum'), None)
+        target = target or next((o['id'] for o in observations if o.get('type') == 'spl'), None)
+        # Preserve saved model identity; add a derived display observable only to this run.
+        delay_id = '__studio_acoustic_group_delay'
+        while any(o.get('id') == delay_id for o in observations):
+            delay_id += '_'
+        if target and len(request.frequencies_hz) >= 3:
+            observations.append({'id': delay_id, 'type': 'group_delay', 'target': target})
+        result = run_simulation(model, request.frequencies_hz)
 
         response_data = {
             "frequencies_hz": _json_safe_list_or_empty(getattr(result, 'frequencies_hz', None)),
@@ -120,6 +131,9 @@ def perform_simulation(request: SimulationRequest):
             for obs_id, data in series.items():
                 response_data["series"][str(obs_id)] = _json_safe_list_or_empty(data)
 
+        if delay_id in response_data['series']:
+            response_data['properties']['group_delay_ms'] = [1000 * v for v in response_data['series'].pop(delay_id)]
+            response_data['observation_types'].pop(delay_id, None)
         # Fail early here instead of inside FastAPI's encoder if anything non-JSON-safe remains.
         if not response_data["frequencies_hz"] or len(response_data["frequencies_hz"]) != len(request.frequencies_hz):
             raise ValueError("Kernel returned an empty or incomplete frequency grid.")

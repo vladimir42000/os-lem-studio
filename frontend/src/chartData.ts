@@ -47,7 +47,7 @@ export function buildObservableOptions(simulationData: any): ObservableOption[] 
       : toNumericArray(series.cone_excursion_mm);
   const groupDelayValues =
     toNumericArray(series.group_delay).length > 0
-      ? toNumericArray(series.group_delay)
+      ? toNumericArray(series.group_delay).map(v=>1000*v)
       : toNumericArray(properties.group_delay_ms);
 
   return [
@@ -85,7 +85,7 @@ export function buildObservableOptions(simulationData: any): ObservableOption[] 
     },
     {
       id: 'group_delay',
-      label: 'Group Delay',
+      label: 'Acoustic group delay (flight time excluded)',
       unit: 'ms',
       values: groupDelayValues,
       reason: groupDelayValues.length > 0 ? undefined : 'Group delay is not exposed by the current result payload.',

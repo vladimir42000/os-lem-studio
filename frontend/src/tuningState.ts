@@ -35,7 +35,7 @@ function validGraph(g: any): boolean {
 }
 function validWorkspace(w: any): boolean {
   return object(w) && ['closed_box','bass_reflex','transmission_line','horn'].includes(w.topology) && validGraph(w.graph) && validGraph(w.seed) &&
-    (w.override === null || object(w.override)) && stringList(w.pins) && (w.tuning === undefined || (object(w.tuning) && typeof w.tuning.x === 'string' && typeof w.tuning.y === 'string' && object(w.tuning.sensitivity) && Object.values(w.tuning.sensitivity).every((p:any)=>object(p) && ['relative','absolute'].includes(p.mode) && Number.isFinite(p.step) && p.step > 0)));
+    (w.override === null || object(w.override)) && stringList(w.pins) && (w.tuning === undefined || (object(w.tuning) && typeof w.tuning.x === 'string' && typeof w.tuning.y === 'string' && (w.tuning.locked === undefined || (object(w.tuning.locked) && Object.values(w.tuning.locked).every(v=>typeof v==='boolean'))) && object(w.tuning.sensitivity) && Object.values(w.tuning.sensitivity).every((p:any)=>object(p) && ['relative','absolute'].includes(p.mode) && Number.isFinite(p.step) && p.step > 0)));
 }
 function validResult(r: any): boolean {
   return object(r) && object(r.model) && ['graph-derived','loaded-override'].includes(r.source) && object(r.data) &&

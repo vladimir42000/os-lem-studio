@@ -1,3 +1,4 @@
+import {stuffingZones} from './stuffing';
 import { CanvasNode, CanvasEdge } from './types';
 
 type NodeData = Record<string, any>;
@@ -45,6 +46,7 @@ function buildDriver(driverNode: CanvasNode | null) {
     Vas: withUnit(readNumber(data, ['Vas'], 55), 'l'),
     Sd: withUnit(readNumber(data, ['Sd'], 132), 'cm2'),
     source_voltage_rms: readNumber(data, ['source_voltage_rms'], 2.83),
+    ...(readNumber(data,['series_resistance_ohm'],0)>0 ? {series_resistance_ohm:readNumber(data,['series_resistance_ohm'],0)} : {}),
     node_front: 'front',
     node_rear: 'rear',
   };
@@ -214,14 +216,25 @@ function buildTransmissionLineModel(nodes: CanvasNode[]) {
     length: withUnit(length, 'cm'), area_start: withUnit(start, 'cm2'), area_end: withUnit(end, 'cm2'),
     profile: 'conical', segments: Math.max(1, Math.ceil(64 * length / lengthCm)), loss,
   });
-  const sections = offsetCm > 0 ? [
+  let sections: any[] = offsetCm > 0 ? [
     section('closed_stub', 'closed_end', 'rear', offsetCm, area, driverArea),
     section('rear_line', 'rear', 'mouth', lengthCm - offsetCm, driverArea, mouthArea),
   ] : [section('rear_line', 'rear', 'mouth', lengthCm, area, mouthArea)];
+  const zones=stuffingZones(data);
+  if(zones.length) {
+    const epsilon=lengthCm*1e-10;
+    const boundaries=[0,lengthCm,offsetCm,...zones.flatMap(z=>[z.start*lengthCm/100,z.end*lengthCm/100])].sort((a,b)=>a-b).filter((x,i,a)=>i===0||x-a[i-1]>epsilon);
+    const nodeAt=(x:number)=>Math.abs(x-offsetCm)<=epsilon?'rear':x===0?'closed_end':Math.abs(x-lengthCm)<=epsilon?'mouth':`stuffing_boundary_${boundaries.indexOf(x)}`;
+    sections=boundaries.slice(0,-1).map((a,i)=>{
+      const b=boundaries[i+1],mid=(a+b)/2/lengthCm*100;
+      const zone=zones.find(z=>mid>=z.start&&mid<=z.end);
+      return {...section(`line_section_${i}`,nodeAt(a),nodeAt(b),b-a,area+(mouthArea-area)*a/lengthCm,area+(mouthArea-area)*b/lengthCm),...(zone?{flow_resistivity:zone.resistivity}:{})};
+    });
+  }
   return {
     meta: { name: 'studio_transmission_line', radiation_space: '2pi', studio_topology: 'transmission_line',
-      studio_line_assumptions: 'Linear area taper; uniform attenuation alpha in Np/m; unchanged sound speed; no material-density calibration',
-      studio_driver_offset_cm: offsetCm },
+      studio_line_assumptions: zones.length ? 'Linear area taper; Miki equivalent-fluid full-fill zones; user-calibrated density power law; additional uniform attenuation' : 'Linear area taper; uniform attenuation alpha in Np/m; unchanged sound speed; no material-density calibration',
+      studio_driver_offset_cm: offsetCm, ...(zones.length?{studio_stuffing: {model:'Miki 1990 equivalent fluid; full cross-section zones',calibration:'User power law: sigma=sigma_ref*(density/density_ref)^exponent. Defaults illustrative, not material measurements.',zones}}:{}) },
     driver: buildDriver(driver),
     elements: [
       { id: 'front_rad', type: 'radiator', node: 'front', model: 'infinite_baffle_piston',

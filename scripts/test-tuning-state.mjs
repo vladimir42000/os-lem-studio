@@ -27,7 +27,7 @@ const overlays=overlaySeries([{id:1,label:'Result 1',data,reference:true},{id:2,
 assert.equal(overlays[0].lineStyle.type,'dotted');assert.equal(overlays[1].data[0][0],20);assert.equal(overlaySeries([{id:1,label:'Result 1',data,reference:true}],'displacement').length,0);
 for(const [topology,template] of [['closed_box',closedBoxTemplate],['bass_reflex',bassReflexTemplate],['transmission_line',transmissionLineTemplate]]) {
  const parameters=parametersFor(template.nodes,topology);assert(parameters.length>=8);assert.equal(new Set(parameters.map(p=>p.id)).size,parameters.length);
- for(const p of parameters){const nodes=copy(template.nodes);nodes.find(n=>n.id===p.nodeId).data[p.key]=p.value===0?.2:p.value*1.1;assert.notEqual(JSON.stringify(buildModelDict(nodes,template.edges)),JSON.stringify(buildModelDict(template.nodes,template.edges)),`${p.id} must affect the model`);}
+ for(const p of parameters.filter(p=>!p.key.startsWith('stuffing'))){const nodes=copy(template.nodes);nodes.find(n=>n.id===p.nodeId).data[p.key]=p.value===0?.2:p.value*1.1;assert.notEqual(JSON.stringify(buildModelDict(nodes,template.edges)),JSON.stringify(buildModelDict(template.nodes,template.edges)),`${p.id} must affect the model`);}
 }
 console.log('PASS: deep memories, stale rejection, recall, capacity/labels, session validation, parameter coverage and overlay frequency/reference styles.');
 

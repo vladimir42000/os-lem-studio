@@ -37,19 +37,19 @@ const results=()=>document.querySelector('[aria-label="Simulation results"]');
 const labelInput=(text,container=document)=>[...container.querySelectorAll('label')].find(l=>l.textContent===text)?.querySelector('input');
 const inputByName=name=>document.querySelector(`input[aria-label="${name}"]`);
 const editVolume=async value=>{
- const input=[...results().querySelectorAll('input[type=number]')][0];assert(input);
+ const input=[...results().querySelectorAll('.parameter-row label')].find(l=>l.textContent==='Volume liters')?.querySelector('input');assert(input);
  await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,String(value));input.dispatchEvent(new Event('input',{bubbles:true}));});
  await act(async()=>input.dispatchEvent(new FocusEvent('focusout',{bubbles:true})));
 };
 try {
- await render();await click(inputByName('Show Enclosure Volume in Results'));await click(button('Results'));await wait();
+ await render();await click(inputByName('Show Box Volume in Results'));await click(button('Results'));await wait();
  assert.equal(calls.length,1);assert(!button('Memorise').disabled);
  await click(button('Memorise'));assert(button('Result 1'));
  await editVolume(60);await wait();assert.equal(calls.length,2);await click(button('Memorise'));assert(button('Result 2'));
  await click(labelInput('Reference Result 1'));await click(labelInput('Compare Result 1'));
  assert(globalThis.chartOption.series.some(s=>s.name==='Result 1 (reference)' && s.lineStyle.type==='dotted'));
  await click(labelInput('Compare Result 2'));assert(!globalThis.chartOption.series.some(s=>s.name==='Result 2'));
- await click(button('Result 1'));assert.equal(results().querySelector('input[type=number]').value,'50');
+ await click(button('Result 1'));assert.equal([...results().querySelectorAll('.parameter-row label')].find(l=>l.textContent==='Volume liters').querySelector('input').value,'50');
  assert.equal(globalThis.chartOption.series[0].data[0][1],50);
  // Reject an older request after a second edit; run only the latest queued model.
  hold=true;await editVolume(70);await wait();assert(pending.length===1);
@@ -60,11 +60,11 @@ try {
  const saved=localStorage.getItem('oslem.tuning-session.v1');assert(saved);
  await act(async()=>root.unmount());root=createRoot(document.getElementById('root'));await render();await click(button('Results'));
  assert(button('Result 1') && button('Result 2'));assert(labelInput('Reference Result 1').checked);
- assert.equal(results().querySelector('input[type=number]').value,'80');
- await click(button('Result 2'));assert.equal(results().querySelector('input[type=number]').value,'60');
+ assert.equal([...results().querySelectorAll('.parameter-row label')].find(l=>l.textContent==='Volume liters').querySelector('input').value,'80');
+ await click(button('Result 2'));assert.equal([...results().querySelectorAll('.parameter-row label')].find(l=>l.textContent==='Volume liters').querySelector('input').value,'60');
  assert.equal(globalThis.chartOption.series[0].data[0][1],60);
  // Add a second propagated parameter, then exercise two-axis gestures.
- await click(button('Model'));await click(inputByName('Show Driver Re in Results'));await click(button('Results'));
+ await click(button('Model'));await click(inputByName('Show Loudspeaker Re in Results'));await click(button('Results'));
  const pad=document.querySelector('[aria-label="Two parameter control pad"]');
  pad.setPointerCapture=()=>{};pad.releasePointerCapture=()=>{};
  pad.getBoundingClientRect=()=>({width:200,height:200,left:0,top:0});
@@ -88,11 +88,39 @@ try {
  assert.equal(workspace.graph.nodes.find(n=>n.data.type==='volume').data.Vb,60);
  assert.equal(workspace.graph.nodes.find(n=>n.data.type==='driver').data.Re,5);
  assert.equal(workspace.tuning.sensitivity[workspace.tuning.x].step,2);
+ // Lock X: diagonal movement must change Y only. Sensitivity buttons are per axis.
+ await click(button('Lock X'));
+ await pointer('pointerdown',0,200);await pointer('pointermove',200,0);await pointer('pointerup',200,0);await wait();
+ assert.equal(calls.at(-1).model_dict.elements.find(e=>e.type==='volume').value,'60 l');
+ assert.equal(calls.at(-1).model_dict.driver.Re,'10 ohm');
+ await click(button('Undo last adjustment'));await click(button('Unlock X'));
+ await click(document.querySelector('[aria-label="X sensitivity divided by 2"]'));
+ let tuning=JSON.parse(localStorage.getItem('oslem.tuning-session.v1')).workspace.tuning;
+ assert(Math.abs(tuning.sensitivity[tuning.x].step-Math.sqrt(2))<1e-10);
+ await click(document.querySelector('[aria-label="X sensitivity multiplied by 2"]'));
+ tuning=JSON.parse(localStorage.getItem('oslem.tuning-session.v1')).workspace.tuning;
+ assert(Math.abs(tuning.sensitivity[tuning.x].step-2)<1e-10);
+ const groupArea=document.querySelector('.workshop-parameters');
+ await click([...groupArea.querySelectorAll('button')].find(b=>b.textContent==='Amplifier'));
+ assert.equal(groupArea.querySelectorAll('.parameter-row').length,2);
+ await click([...groupArea.querySelectorAll('button')].find(b=>b.textContent==='All'));
  // Cancellation restores the model; movement after release does nothing.
  await pointer('pointerdown',0,200);await pointer('pointermove',100,100);await pointer('pointercancel',100,100);await wait();
  assert.equal(globalThis.chartOption.series[0].data[0][1],60);
  const count=calls.length;await pointer('pointermove',200,0);await wait();assert.equal(calls.length,count);
  await click(button('Exit full-screen view'));assert(!document.querySelector('.graph-focus'));
+ await click(button('Model'));
+ const tlButton=[...document.querySelectorAll('button')].find(b=>b.textContent.includes('Transmission Line'));
+ await click(tlButton);await click(button('Results'));await wait();
+ const zoneInput=[...results().querySelectorAll('.parameter-row label')].find(l=>l.textContent==='Stuffing 1 end %')?.querySelector('input');assert(zoneInput);
+ await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(zoneInput,'101');zoneInput.dispatchEvent(new Event('input',{bubbles:true}));});
+ await act(async()=>zoneInput.dispatchEvent(new FocusEvent('focusout',{bubbles:true})));
+ assert(document.querySelector('.graph-station'),'invalid zone must not crash Results');
+ assert([...document.querySelectorAll('[role=alert]')].some(e=>e.textContent.includes('Stuffing zones')));
+ await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(zoneInput,'25');zoneInput.dispatchEvent(new Event('input',{bubbles:true}));});
+ await act(async()=>zoneInput.dispatchEvent(new FocusEvent('focusout',{bubbles:true})));await wait();
+ assert(![...document.querySelectorAll('[role=alert]')].some(e=>e.textContent.includes('Stuffing zones')));
+ console.log('PASS: axis lock, sensitivity buttons, group filtering, invalid zone error and recovery.');
  console.log('PASS: two-axis relative gesture, live request, dashed previous curve, one-step whole-model Undo, cancellation, release, sensitivity persistence and focus-view toggle.');
  console.log('PASS: Model pin -> Results edit/autocalculation, memory/recall, reference independent of compare, stale-response rejection, and refresh restoration.');
 } finally {await act(async()=>root.unmount());rmSync(output,{force:true});dom.window.close();}

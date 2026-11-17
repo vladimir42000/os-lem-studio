@@ -285,3 +285,7 @@ cover live pre-release curve changes, two values changing together, grey previou
 curve, atomic Undo, cancellation, release, persisted sensitivity and focus toggle.
 DOM tests still stub chart drawing; no claim of browser visual QA. Acoustic
 kernel and dependencies are unchanged. Hornresp/Akabak validation is still pending.
+
+## Workshop refinement
+
+Axis locks and sensitivity ×2/÷2/Default; all model parameters grouped alongside graph; TL/BR volume; amplifier source resistance; acoustic group delay; experimental Miki stuffing zones with explicit density-to-resistivity calibration. Requires updated kernel and backend restart, in addition to frontend update. See `docs/results_tuning.md` and kernel `docs/workshop_acoustic_extensions.md`. Scientific external validation remains outstanding.

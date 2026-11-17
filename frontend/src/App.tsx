@@ -2,7 +2,7 @@ import TuningPad from './TuningPad';
 import { emptyPad, type PadSettings } from './tuningGesture';
 import ParameterPanel from './ParameterPanel';
 import MemoryPanel from './MemoryPanel';
-import { parametersFor, type Parameter } from './parameters';
+import { parametersFor, boxSummary, type Parameter } from './parameters';
 import { clone, memorise, recall, parseSession, SESSION_KEY, type TuningSession, type ResultRecord, type Workspace } from './tuningState';
 import { closedBoxTemplate, bassReflexTemplate, transmissionLineTemplate } from './topologyTemplates';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -352,11 +352,13 @@ export default function App() {
   const currentGraph = useMemo<GraphSnapshot>(() => cloneGraphSnapshot({ nodes, edges }), [nodes, edges]);
   const canvasNodes = useMemo(() => nodes.map(toCanvasNode), [nodes]);
   const canvasEdges = useMemo(() => edges.map(toCanvasEdge), [edges]);
-  const graphDerivedCanonicalModel = useMemo(
-    () => buildModelDict(canvasNodes, canvasEdges),
+  const compiledGraph = useMemo(
+    () => {try {return {model:buildModelDict(canvasNodes,canvasEdges),error:''};}
+      catch(error){return {model:{} as Record<string,any>,error:error instanceof Error?error.message:'Invalid model parameters'};}},
     [canvasNodes, canvasEdges],
   );
 
+  const graphDerivedCanonicalModel=compiledGraph.model;
   // lifecycle marker: canonical model snapshot key used for result ownership
   const canonicalModel = loadedCanonicalModelOverride ?? graphDerivedCanonicalModel;
   const canonicalModelSnapshotKey = useMemo(() => stableSnapshotKey(canonicalModel), [canonicalModel]);
@@ -431,7 +433,7 @@ export default function App() {
         ? 'bad'
         : 'warning';
 
-  const canRunSimulation = Boolean(loadedCanonicalModelOverride) || graphAssessment.status === 'compilable_anchor';
+  const canRunSimulation = Boolean(loadedCanonicalModelOverride) || (!compiledGraph.error && graphAssessment.status === 'compilable_anchor');
   const runButtonLabel = loadedCanonicalModelOverride ? 'Run Loaded Canonical Model' : anchorWorkflowCopy.runLabel;
 
   const replaceWorkingGraph = useCallback(
@@ -922,7 +924,7 @@ export default function App() {
 
         <div className="model-inspector">
           <fieldset disabled={loadedCanonicalModelOverride !== null} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
-          <h3>Model parameters</h3>
+          <h3>Model parameters</h3>{compiledGraph.error && <p role="alert">{compiledGraph.error}</p>}<p>{boxSummary(nodes,selectedTopology)}</p>
           <p>Select “Show in Results” to make parameters available beside the response graph.</p>
           <ParameterPanel parameters={parameters} pins={pins} onPin={togglePin} onChange={changeParameter} />
           {selectedTopology === 'transmission_line' && <p>Linear-area taper; offset must be smaller than line length. Attenuation is damping only (Np/m), with unchanged sound speed, not a material-density model.</p>}
@@ -943,14 +945,19 @@ export default function App() {
             <span role="status">{isSimulating?'Calculating…':resultStateLabel}</span>
           </div>
           {runError && <div role="alert">{runError}</div>}
+          {!loadedCanonicalModelOverride && compiledGraph.error && <div role="alert">{compiledGraph.error}</div>}
           <div className="graph-and-pad">
             <div className="results-chart">
               <ChartPanel simulationData={simulationResult} stale={resultLifecycleIsStale && !dragging}
                 overlays={chartOverlays} />
             </div>
-            <TuningPad parameters={parameters.filter(p=>pins.includes(p.id))} settings={padSettings} onSettings={setPadSettings}
+            <div className="workshop-sidebar"><TuningPad parameters={parameters.filter(p=>pins.includes(p.id))} settings={padSettings} onSettings={setPadSettings}
               disabled={!!loadedCanonicalModelOverride || !canRunSimulation || (!dragging && (isSimulating || !simulationResult || resultLifecycleIsStale))}
               onStart={startGesture} onMove={moveGesture} onEnd={endGesture} onCancel={cancelGesture} />
+              <div className="workshop-parameters"><h3>All model parameters</h3><p>{boxSummary(nodes,selectedTopology)}</p>
+              {selectedTopology==='transmission_line' && <p className="stuffing-note">Stuffing zones fill the cross-section. Zero density disables a zone. Positions are % of line length from the closed end. Material defaults are illustrative: calibrate density/resistivity before trusting stuffed-line predictions.</p>}
+              <ParameterPanel parameters={parameters} pins={pins} disabled={dragging || !!loadedCanonicalModelOverride} onPin={togglePin} onChange={changeParameter}/></div>
+            </div>
           </div>
         </div>
         <details className="results-tuning">

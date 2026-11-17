@@ -137,3 +137,25 @@ summary { cursor: pointer; font-weight: 600; }
  .graph-focus .graph-and-pad { overflow:auto; }
  .tuning-pad-panel { flex-shrink:0; }
 }
+
+.workshop-sidebar {min-height:0;overflow:auto;border-left:1px solid #d4deeb;}
+.workshop-sidebar .tuning-pad-panel {overflow:visible;border:0;}
+.workshop-parameters {padding:12px;}
+.workshop-parameters .model-parameters {display:block;}
+.workshop-parameters .parameter-row {margin:8px 0;}
+.axis-actions,.parameter-groups {display:flex;gap:4px;flex-wrap:wrap;}
+.axis-actions button {padding:6px;font-size:12px;}
+.parameter-groups {grid-column:1/-1;}
+.parameter-groups button {padding:7px;font-size:13px;}
+button[aria-pressed="true"] {background:#185184;color:white;}
+.stuffing-note {font-size:12px;}
+
+.workshop-sidebar {display:flex;flex-direction:column;overflow:hidden;}
+.workshop-sidebar .tuning-pad-panel {flex-shrink:0;padding:8px;}
+.workshop-sidebar .tuning-pad {height:115px;}
+.workshop-sidebar .pad-axis {margin-bottom:5px;}
+.workshop-parameters {flex:1;min-height:100px;overflow:auto;padding:8px;}
+.workshop-parameters h3 {font-size:14px;margin:4px 0;}
+.workshop-parameters p {font-size:12px;margin:5px 0;}
+.sensitivity-details summary {font-size:11px;font-weight:normal;}
+@media(max-width:540px){.workshop-sidebar {overflow:visible;flex-shrink:0;}.workshop-parameters{max-height:350px;}}

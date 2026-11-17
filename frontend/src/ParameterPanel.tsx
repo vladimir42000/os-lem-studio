@@ -24,8 +24,12 @@ export default function ParameterPanel({ parameters, pins, results = false, disa
   parameters: Parameter[]; pins: string[]; results?: boolean; disabled?: boolean;
   onPin: (id: string) => void; onChange: (p: Parameter,value: number) => void;
 }) {
-  const visible = results ? parameters.filter(p=>pins.includes(p.id)) : parameters;
+  const [group,setGroup]=useState<string>('');
+  const groups=[...new Set(parameters.map(p=>p.group))];
+  const visible=parameters.filter(p=>(!group || p.group===group) && (!results || pins.includes(p.id)));
+  const groupButtons=<div className="parameter-groups"><button aria-pressed={!group} onClick={()=>setGroup('')}>All</button>{groups.map(g=><button key={g} aria-pressed={group===g} onClick={()=>setGroup(group===g?'':g)}>{g}</button>)}</div>;
   return <div className={results ? 'tuning-parameters' : 'model-parameters'}>
+    {groupButtons}
     {visible.length === 0 && <p>{results ? 'Select “Show in Results” beside parameters in Model to tune them here.' : 'No editable parameters for this topology.'}</p>}
     {visible.map(p=><div className="parameter-row" key={p.id}>
       <small>{p.group}</small>

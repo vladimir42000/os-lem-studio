@@ -123,3 +123,27 @@ live curve updates before release, saved pad settings, the grey pre-drag curve,
 one-step restoration of both parameters, cancellation/release and focus-view
 entry/exit. DOM tests stub actual chart drawing; visual Chromebook verification
 remains outstanding.
+
+## Workshop refinement: locks, groups and acoustic extensions
+
+Each axis has **Lock/Unlock**, **÷2**, **×2**, and **Default** on one row. Lock ignores movement on that axis without suppressing the other axis; both locked disables the pad. Locks persist in sessions and memories. Sensitivity details can be expanded to enter an exact value (Enter or blur applies). For relative control, ×2 doubles the logarithmic movement rate: factor 2 becomes 4; ÷2 gives sqrt(2). Repeated ÷2 allows fine movement without reversing direction. Absolute units/pixel multiply/divide directly. Default restores factor 2 for positive values or 0.01 units/pixel for zero. Relative factor must be >1; absolute sensitivity >0.
+
+The graph sidebar includes **all model parameters**, including unpinned values. **Loudspeaker**, **Box**, **Amplifier** filter to one group; click the active group again or All to show every group. Show in Results controls which parameters appear in the two axis selectors; it does not hide the contextual model list. The list scrolls independently beneath the compact pad. The same groups are available in Model.
+
+Box volume is shown in litres: TL uses L(S0+SM)/2 for the existing linear-area taper; BR shows net chamber air volume and port air volume separately. These are not external cabinet dimensions and do not add wall thickness or driver displacement.
+
+Amplifier voltage is open-circuit RMS voltage; series resistance is in ohms and defaults to zero. It does not change the driver's TS calibration. Input impedance currently includes this resistance.
+
+### Stuffing zones (experimental)
+
+Three optional full-cross-section zones are available in the Box group. For each enter start/end as percentages of line length from the closed end and density in kg/m³. Zero density disables a zone. Active zones must not overlap; require 0 ≤ start < end ≤ 100. Percent positions remain attached to the geometry when tuning length. The translator splits at each zone boundary and at the driver position, preserving total length and linear area taper.
+
+Material controls are reference density, reference flow resistivity in Pa·s/m², and density exponent. The explicitly assumed calibration law is:
+
+`σ = σ_reference × (density / density_reference)^exponent`
+
+Initial 30 kg/m³, 10000 Pa·s/m² and exponent 1.5 are **illustrative assumptions, not measured data for wool/polyester/glass fibre**. Replace them with calibration for your material. All zone densities start at zero. Miki (1990) equivalent-fluid propagation then models both loss and phase-speed changes. This is full filling, not thin wall lining. Extra uniform attenuation remains available; avoid counting the same loss twice. See kernel `docs/workshop_acoustic_extensions.md` and https://doi.org/10.1250/ast.11.19. External comparison remains required.
+
+**Acoustic group delay (flight time excluded)** is derived from the complex combined radiator pressure (driver pressure for a closed box), in milliseconds. It is not impedance-phase delay. Sharp cancellation nulls may give unreliable sampled delay peaks. Reload/re-run old memories to obtain the new observable; their stored older curves remain usable for their existing observables.
+
+The 600-point grid and 64-segment base resolution remain unchanged. Banded elimination and vectorized segment assembly reduced a local TL sweep from about 0.48 s to 0.16 s, with <1e-9 dB difference for the benchmark. Chromebook speed depends on its CPU. Interaction tests cover locks, sensitivity scaling, grouped values, recall and Undo; visual testing on the target Chromebook remains outstanding.

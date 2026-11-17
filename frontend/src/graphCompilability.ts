@@ -1,3 +1,4 @@
+import {stuffingKeys,stuffingZones} from './stuffing';
 import type { Edge as ReactFlowEdge, Node as ReactFlowNode } from 'reactflow';
 import {
   assessPrimitiveConstraints,
@@ -73,10 +74,10 @@ function normalizeSnapshot(snapshot: GraphSnapshot | null | undefined): string {
 // Only numeric parameters consumed by the fixed-topology translators may
 // vary. Keep models, node IDs, connections and unsupported fields seed-bound.
 const EDITABLE_PARAMETERS: Record<string, string[]> = {
-  driver: ['Re', 'Le', 'Sd', 'Fs', 'Qes', 'Qms', 'Vas', 'source_voltage_rms'],
+  driver: ['Re', 'Le', 'Sd', 'Fs', 'Qes', 'Qms', 'Vas', 'source_voltage_rms', 'series_resistance_ohm'],
   volume: ['Vb', 'volume_l'],
   duct: ['areaCm2', 'lengthCm'],
-  waveguide_1d: ['areaCm2', 'lengthCm', 'mouthAreaCm2', 'driverOffsetCm', 'lossNpPerM'],
+  waveguide_1d: ['areaCm2', 'lengthCm', 'mouthAreaCm2', 'driverOffsetCm', 'lossNpPerM', ...stuffingKeys],
   radiator: ['Sd', 'area_cm2'],
 };
 
@@ -85,9 +86,10 @@ function matchesEditableTemplate(seed: GraphSnapshot | null, current: GraphSnaps
   for (const node of current.nodes) {
     const data = node.data || {};
     for (const key of EDITABLE_PARAMETERS[data.type] || []) {
-      const allowZero = data.type === 'waveguide_1d' && ['driverOffsetCm', 'lossNpPerM'].includes(key);
+      const allowZero = key==='series_resistance_ohm' || (data.type === 'waveguide_1d' && (['driverOffsetCm', 'lossNpPerM'].includes(key) || /^stuffing[123](Start|End|Density)$/.test(key)));
       if (key in data && (typeof data[key] !== 'number' || !Number.isFinite(data[key]) || (allowZero ? data[key] < 0 : data[key] <= 0))) return false;
     }
+    if(data.type==='waveguide_1d'){try{stuffingZones(data);}catch{return false;}}
     if (data.type === 'waveguide_1d' && (data.driverOffsetCm ?? 0) >= (data.lengthCm ?? 160)) return false;
   }
   const withoutParameters = (graph: GraphSnapshot): GraphSnapshot => ({
