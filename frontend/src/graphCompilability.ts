@@ -77,7 +77,7 @@ const EDITABLE_PARAMETERS: Record<string, string[]> = {
   driver: ['Re', 'Le', 'Sd', 'Fs', 'Qes', 'Qms', 'Vas', 'source_voltage_rms', 'series_resistance_ohm'],
   volume: ['Vb', 'volume_l'],
   duct: ['areaCm2', 'lengthCm'],
-  waveguide_1d: ['areaCm2', 'lengthCm', 'mouthAreaCm2', 'driverOffsetCm', 'lossNpPerM', ...stuffingKeys],
+  waveguide_1d: ['areaCm2', 'lengthCm', 'mouthAreaCm2', 'driverOffsetCm', 'lossNpPerM', 'lineSegments', ...stuffingKeys],
   radiator: ['Sd', 'area_cm2'],
 };
 

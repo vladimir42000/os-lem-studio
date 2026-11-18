@@ -188,5 +188,78 @@ def optimisation_evaluate(request: OptimisationEvaluationRequest):
         raise HTTPException(status_code=422, detail=str(error))
 
 
+class AlignmentRequest(BaseModel):
+    ts: Dict[str, float]
+    port_area_cm2: float
+    max_volume_l: float = 200
+    max_port_length_cm: float = 150
+
+
+@app.post('/api/optimise/alignments')
+def br_alignment_proposals(request: AlignmentRequest):
+    try:
+        from backend.br_alignments import proposals
+    except ModuleNotFoundError:
+        from br_alignments import proposals
+    try:
+        return proposals(request.ts, request.port_area_cm2, request.max_volume_l, request.max_port_length_cm)
+    except (ValueError, KeyError, TypeError) as error:
+        raise HTTPException(status_code=422, detail=str(error))
+
+
+# Bounded in-memory ask/tell jobs. A client disappearing expires its worker.
+from threading import Lock
+from time import monotonic
+from uuid import uuid4
+_adaptive_jobs = {}
+_adaptive_lock = Lock()
+
+
+class AdaptiveStartRequest(BaseModel):
+    bounds: List[Dict[str, Any]]
+    global_budget: int = 128
+    local_budget: int = 64
+    seed: int = 17
+
+
+class AdaptiveStepRequest(BaseModel):
+    job_id: str
+    reply: Optional[Dict[str, Any]] = None
+
+
+@app.post('/api/optimise/adaptive/start')
+def adaptive_start(request: AdaptiveStartRequest):
+    try:
+        from os_lem_opt.adaptive import AdaptiveSession
+    except ImportError:
+        raise HTTPException(status_code=503, detail='Update and reinstall os-lem-opt to enable adaptive search.')
+    with _adaptive_lock:
+        for key, job in list(_adaptive_jobs.items()):
+            if job.finished_at is not None and monotonic()-job.finished_at>60: del _adaptive_jobs[key]
+        if sum(not (job.done or job.cancelled) for job in _adaptive_jobs.values())>=4:
+            raise HTTPException(status_code=429, detail='Four searches are already active. Stop one or wait for expiry.')
+        try:
+            job=AdaptiveSession(request.bounds,request.global_budget,request.local_budget,request.seed)
+        except (ValueError,KeyError,TypeError) as error:
+            raise HTTPException(status_code=422, detail=str(error))
+        key=uuid4().hex;_adaptive_jobs[key]=job
+    return {'job_id':key}
+
+
+@app.post('/api/optimise/adaptive/step')
+def adaptive_step(request: AdaptiveStepRequest):
+    with _adaptive_lock: job=_adaptive_jobs.get(request.job_id)
+    if job is None:raise HTTPException(status_code=404, detail='Search expired or was cancelled.')
+    try:return job.step(request.reply)
+    except (ValueError,KeyError,TypeError) as error:raise HTTPException(status_code=422,detail=str(error))
+
+
+@app.post('/api/optimise/adaptive/stop')
+def adaptive_stop(request: AdaptiveStepRequest):
+    with _adaptive_lock: job=_adaptive_jobs.pop(request.job_id,None)
+    if job is not None:job.cancel()
+    return {'stopped':True}
+
+
 if __name__ == "__main__":
     uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)

@@ -1,3 +1,5 @@
+import TLAdaptivePanel from './TLAdaptivePanel';
+import BRAlignments from './BRAlignments';
 import OptimisationPanel from './OptimisationPanel';
 import type { Candidate } from './optimisation';
 import TuningPad from './TuningPad';
@@ -969,8 +971,8 @@ export default function App() {
             <div className="workshop-sidebar"><div className="workshop-mode">
               <button aria-pressed={workshopMode==='tuning'} onClick={()=>setWorkshopMode('tuning')}>Manual tuning</button>
               <button aria-pressed={workshopMode==='optimise'} onClick={()=>setWorkshopMode('optimise')}>Optimise</button></div>
-              <div className="workshop-optimisation" hidden={workshopMode!=='optimise'}><OptimisationPanel workspace={workspace} identity={currentIdentity} disabled={dragging || isSimulating || !canRunSimulation || !simulationResult || resultLifecycleIsStale}
-              onPreview={setOptPreview} onApply={applyOptCandidate}/></div><div className="manual-workshop" hidden={workshopMode!=='tuning'}><TuningPad parameters={parameters.filter(p=>pins.includes(p.id))} settings={padSettings} onSettings={setPadSettings}
+              <div className="workshop-optimisation" hidden={workshopMode!=='optimise'}><BRAlignments workspace={workspace} identity={currentIdentity} disabled={dragging || isSimulating || !canRunSimulation} onPreview={setOptPreview} onApply={applyOptCandidate}/>{selectedTopology==='transmission_line'&&!loadedCanonicalModelOverride?<TLAdaptivePanel workspace={workspace} identity={currentIdentity} disabled={dragging || isSimulating || !canRunSimulation || !simulationResult || resultLifecycleIsStale} onPreview={setOptPreview} onApply={applyOptCandidate}/>:<OptimisationPanel workspace={workspace} identity={currentIdentity} disabled={dragging || isSimulating || !canRunSimulation || !simulationResult || resultLifecycleIsStale}
+              onPreview={setOptPreview} onApply={applyOptCandidate}/>}</div><div className="manual-workshop" hidden={workshopMode!=='tuning'}><TuningPad parameters={parameters.filter(p=>pins.includes(p.id))} settings={padSettings} onSettings={setPadSettings}
               disabled={!!loadedCanonicalModelOverride || !canRunSimulation || (!dragging && (isSimulating || !simulationResult || resultLifecycleIsStale))}
               onStart={startGesture} onMove={moveGesture} onEnd={endGesture} onCancel={cancelGesture} />
               <div className="workshop-parameters"><h3>All model parameters</h3><p>{boxSummary(nodes,selectedTopology)}</p>

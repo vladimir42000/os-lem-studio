@@ -5,7 +5,7 @@ import { buildModelDict } from './translator';
 export type Bound = {id:string; min:number; max:number; value:number};
 export type Objective = {low_hz:number; high_hz:number; target_db:number; max_volume_l:number; max_excursion_mm:number};
 export type Evaluation = {score:number;feasible:boolean;violations:string[];volume_l:number;peak_excursion_mm:number;ripple_db:number;peak_group_delay_ms:number|null};
-export type Candidate = {id:number;workspace:Workspace;result:ResultRecord;evaluation:Evaluation;values:Record<string,number>};
+export type Candidate = {verification?:{passed:boolean;max_spl_delta_db:number;coarse_delta_db:number};id:number;workspace:Workspace;result:ResultRecord;evaluation:Evaluation;values:Record<string,number>};
 export function geometryParameters(workspace:Workspace):Parameter[] {
   const keys=workspace.topology==='bass_reflex'?['Vb','areaCm2','lengthCm']:workspace.topology==='transmission_line'?['lengthCm','driverOffsetCm','areaCm2','mouthAreaCm2']:[];
   return parametersFor(workspace.graph.nodes,workspace.topology).filter(p=>p.group==='Box'&&keys.includes(p.key));

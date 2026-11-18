@@ -45,6 +45,7 @@ const editVolume=async value=>{
 let optHeld=false,optPending=[],optEvaluations=0;
 globalThis.fetch=async (url,options)=>{
  const req=JSON.parse(options.body);
+ if(String(url).endsWith('/alignments'))return Response.json({qts_effective:.3,assumption:'Test fixture',alignments:[{name:'SBB4',available:true,applicable:true,volume_l:40,fb_hz:40,port_length_cm:20,reason:''},{name:'C4',available:false,applicable:false,reason:'Outside family domain'}]});
  if(String(url).endsWith('/plan'))return Response.json({candidates:[.8,.9,1.1,1.2].map(f=>Object.fromEntries(req.bounds.map(b=>[b.id,b.value*f])))});
  const volume=Number.parseFloat(req.model_dict.elements.find(e=>e.type==='volume')?.value || '50');
  const data={frequencies_hz:req.frequencies_hz,series:{spl_sum:req.frequencies_hz.map(()=>volume)},properties:{cone_excursion_mm:req.frequencies_hz.map(()=>1)},warnings:[],observation_types:{spl_sum:'spl_sum'}};
@@ -77,5 +78,9 @@ try {
  await click(button('Start optimisation'));await wait(30);assert(optPending.length===1);
  await editVolume(70);await act(async()=>optPending.shift()());optHeld=false;await wait();
  assert(!button('Apply candidate 1'));assert.equal(globalThis.chartOption.series[0].data[0][1],70);
- console.log('PASS: OPT progress, candidate overlay without model mutation, Apply/Memorise/Undo, Stop and stale response rejection.');
+ assert(button('C4').disabled);assert(!button('SBB4').disabled);
+ await click(button('SBB4'));await wait(30);assert(button('Apply SBB4'));
+ await click(button('Apply SBB4'));await wait(30);assert.equal(globalThis.chartOption.series[0].data[0][1],40);
+ await click(button('Undo last adjustment'));await wait(30);assert.equal(globalThis.chartOption.series[0].data[0][1],70);
+ console.log('PASS: BR disabled family, preview/apply/undo; OPT progress, candidate overlay without model mutation, Apply/Memorise/Undo, Stop and stale response rejection.');
 } finally {await act(async()=>root.unmount());rmSync(output,{force:true});}

@@ -208,13 +208,15 @@ function buildTransmissionLineModel(nodes: CanvasNode[]) {
   const mouthArea = readNumber(data, ['mouthAreaCm2'], area);
   const lengthCm = readNumber(data, ['lengthCm'], 160);
   const offsetCm = readNumber(data, ['driverOffsetCm'], 0);
+  const lineSegments=readNumber(data,['lineSegments'],64);
+  if(!Number.isInteger(lineSegments)||lineSegments<16||lineSegments>512)throw new Error('Line segments must be an integer from 16 to 512.');
   const loss = readNumber(data, ['lossNpPerM'], 0);
   // Kernel 'conical' currently means linear AREA, not linear radius.
   const driverArea = area + (mouthArea - area) * offsetCm / lengthCm;
   const section = (id: string, nodeA: string, nodeB: string, length: number, start: number, end: number) => ({
     id, type: 'waveguide_1d', node_a: nodeA, node_b: nodeB,
     length: withUnit(length, 'cm'), area_start: withUnit(start, 'cm2'), area_end: withUnit(end, 'cm2'),
-    profile: 'conical', segments: Math.max(1, Math.ceil(64 * length / lengthCm)), loss,
+    profile: 'conical', segments: Math.max(1, Math.ceil(lineSegments * length / lengthCm)), loss,
   });
   let sections: any[] = offsetCm > 0 ? [
     section('closed_stub', 'closed_end', 'rear', offsetCm, area, driverArea),

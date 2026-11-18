@@ -24,7 +24,7 @@ try:
             time.sleep(.1)
     else:
         raise RuntimeError('Backend did not become ready')
-    subprocess.run(['node', 'scripts/test-optimisation-workflow.mjs'], cwd=root, env={**os.environ, 'STUDIO_TEST_BACKEND_URL':url}, check=True)
+    subprocess.run(['node', os.environ.get('STUDIO_TEST_SCRIPT', 'scripts/test-optimisation-workflow.mjs')], cwd=root, env={**os.environ, 'STUDIO_TEST_BACKEND_URL':url}, check=True)
 finally:
     server.terminate()
     try:
