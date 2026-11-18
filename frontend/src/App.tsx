@@ -1,3 +1,5 @@
+import OptimisationPanel from './OptimisationPanel';
+import type { Candidate } from './optimisation';
 import TuningPad from './TuningPad';
 import { emptyPad, type PadSettings } from './tuningGesture';
 import ParameterPanel from './ParameterPanel';
@@ -312,6 +314,8 @@ export default function App() {
   const [initial] = useState(initialTuningSession);
   const restored = initial.session;
   const [pins,setPins] = useState<string[]>(restored?.workspace.pins ?? []);
+  const [workshopMode,setWorkshopMode] = useState<'tuning'|'optimise'>('tuning');
+  const [optPreview,setOptPreview] = useState<Candidate|null>(null);
   const [memories,setMemories] = useState(restored?.memories ?? []);
   const [nextId,setNextId] = useState(restored?.nextId ?? 1);
   const [referenceId,setReferenceId] = useState<number | null>(restored?.referenceId ?? null);
@@ -418,9 +422,10 @@ export default function App() {
   const canUndo = !dragging && (!!gestureUndo || historyState.index > 0);
   const canRedo = historyState.index < historyState.snapshots.length - 1;
   const chartOverlays = useMemo(()=>[
+    ...(optPreview?[{id:1000+optPreview.id,label:`OPT candidate ${optPreview.id}`,data:optPreview.result.data,reference:false}]:[]),
     ...memories.filter(m=>m.compare || m.id===referenceId).map(m=>({id:m.id,label:m.label,data:m.result.data,reference:m.id===referenceId})),
-    ...(previousGesture?[{id:0,label:'Before last drag',data:previousGesture.data,reference:false,previous:true}]:[]),
-  ],[memories,referenceId,previousGesture]);
+    ...(previousGesture?[{id:0,label:'Before last adjustment',data:previousGesture.data,reference:false,previous:true}]:[]),
+  ],[memories,referenceId,previousGesture,optPreview]);
   const currentWarnings = Array.isArray(simulationResult?.warnings)
     ? simulationResult.warnings.filter((warning: unknown) => typeof warning === 'string' && warning.trim().length > 0)
     : [];
@@ -549,6 +554,16 @@ export default function App() {
     setResultRecord(clone(saved.result));setSimulationResult(saved.result?.data ?? null);
     setLatestResultCanonicalModelSnapshotKey(saved.result ? stableSnapshotKey(saved.result.model) : null);
     setLatestResultSourceKind(saved.result?.source ?? null);setGestureUndo(null);setRunError(null);setForceRecalculate(false);
+    attemptedKey.current='';
+  };
+  const applyOptCandidate = (candidate:Candidate) => {
+    generation.current += 1;
+    setGestureUndo({workspace:clone(workspace),result:clone(resultRecord),history:clone(historyState)});
+    setPreviousGesture(clone(resultRecord));
+    replaceWorkingGraph(candidate.workspace.graph,{recordHistory:true});
+    setResultRecord(clone(candidate.result));setSimulationResult(clone(candidate.result.data));
+    setLatestResultCanonicalModelSnapshotKey(stableSnapshotKey(candidate.result.model));
+    setLatestResultSourceKind('graph-derived');setRunError(null);setOptPreview(null);
     attemptedKey.current='';
   };
   const startGesture = () => {
@@ -951,12 +966,16 @@ export default function App() {
               <ChartPanel simulationData={simulationResult} stale={resultLifecycleIsStale && !dragging}
                 overlays={chartOverlays} />
             </div>
-            <div className="workshop-sidebar"><TuningPad parameters={parameters.filter(p=>pins.includes(p.id))} settings={padSettings} onSettings={setPadSettings}
+            <div className="workshop-sidebar"><div className="workshop-mode">
+              <button aria-pressed={workshopMode==='tuning'} onClick={()=>setWorkshopMode('tuning')}>Manual tuning</button>
+              <button aria-pressed={workshopMode==='optimise'} onClick={()=>setWorkshopMode('optimise')}>Optimise</button></div>
+              <div className="workshop-optimisation" hidden={workshopMode!=='optimise'}><OptimisationPanel workspace={workspace} identity={currentIdentity} disabled={dragging || isSimulating || !canRunSimulation || !simulationResult || resultLifecycleIsStale}
+              onPreview={setOptPreview} onApply={applyOptCandidate}/></div><div className="manual-workshop" hidden={workshopMode!=='tuning'}><TuningPad parameters={parameters.filter(p=>pins.includes(p.id))} settings={padSettings} onSettings={setPadSettings}
               disabled={!!loadedCanonicalModelOverride || !canRunSimulation || (!dragging && (isSimulating || !simulationResult || resultLifecycleIsStale))}
               onStart={startGesture} onMove={moveGesture} onEnd={endGesture} onCancel={cancelGesture} />
               <div className="workshop-parameters"><h3>All model parameters</h3><p>{boxSummary(nodes,selectedTopology)}</p>
               {selectedTopology==='transmission_line' && <p className="stuffing-note">Stuffing zones fill the cross-section. Zero density disables a zone. Positions are % of line length from the closed end. Material defaults are illustrative: calibrate density/resistivity before trusting stuffed-line predictions.</p>}
-              <ParameterPanel parameters={parameters} pins={pins} disabled={dragging || !!loadedCanonicalModelOverride} onPin={togglePin} onChange={changeParameter}/></div>
+              <ParameterPanel parameters={parameters} pins={pins} disabled={dragging || !!loadedCanonicalModelOverride} onPin={togglePin} onChange={changeParameter}/></div></div>
             </div>
           </div>
         </div>

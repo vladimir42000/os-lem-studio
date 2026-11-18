@@ -159,3 +159,20 @@ button[aria-pressed="true"] {background:#185184;color:white;}
 .workshop-parameters p {font-size:12px;margin:5px 0;}
 .sensitivity-details summary {font-size:11px;font-weight:normal;}
 @media(max-width:540px){.workshop-sidebar {overflow:visible;flex-shrink:0;}.workshop-parameters{max-height:350px;}}
+
+.optimisation-panel { background: #f4f7fb; border: 1px solid #bccad9; border-radius: 6px; padding: 10px; margin-bottom: 12px; color: #172b43; }
+.optimisation-panel summary { font-weight: 700; cursor: pointer; }
+.optimisation-panel p { font-size: 12px; line-height: 1.4; }
+.optimisation-panel fieldset { min-width: 0; padding: 8px; }
+.opt-bound { margin-bottom: 9px; }
+.opt-bound input[type=number] { width: 42%; }
+.opt-field { display: flex; justify-content: space-between; gap: 5px; margin: 7px 0; font-size: 12px; }
+.opt-field input { width: 85px; }
+.opt-candidate { border-top: 1px solid #bccad9; margin-top: 10px; padding-top: 8px; font-size: 12px; }
+.opt-candidate button { margin: 4px 4px 0 0; }
+
+.workshop-mode { display:flex; gap:5px; padding:8px; flex-shrink:0; border-bottom:1px solid #d4deeb; }
+.workshop-mode button[aria-pressed=true] { background:#dbeafe; color:#172b43; border-color:#2563eb; }
+.workshop-optimisation { flex:1; min-height:0; overflow:auto; padding:5px; }
+.manual-workshop { display:flex; flex-direction:column; flex:1; min-height:0; }
+.manual-workshop[hidden], .workshop-optimisation[hidden] { display:none; }

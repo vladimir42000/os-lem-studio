@@ -80,7 +80,7 @@ try {
  assert.equal(calls.at(-1).model_dict.elements.find(e=>e.type==='volume').value,'120 l');
  assert.equal(calls.at(-1).model_dict.driver.Re,'10 ohm');
  assert.equal(globalThis.chartOption.series[0].data[0][1],120,'curve must update before pointer release');
- assert(globalThis.chartOption.series.some(s=>s.name==='Before last drag'&&s.lineStyle.type==='dashed'&&s.data[0][1]===60));
+ assert(globalThis.chartOption.series.some(s=>s.name==='Before last adjustment'&&s.lineStyle.type==='dashed'&&s.data[0][1]===60));
  await pointer('pointerup',200,0);await wait();
  await click(button('Undo last adjustment'));
  assert.equal(globalThis.chartOption.series[0].data[0][1],60);

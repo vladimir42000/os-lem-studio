@@ -147,5 +147,46 @@ def perform_simulation(request: SimulationRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+
+
+# Optional OPT installation keeps normal simulation available without OPT.
+def _workshop_opt():
+    try:
+        from os_lem_opt import workshop
+        return workshop
+    except ImportError:
+        raise HTTPException(status_code=503, detail='OS-LEM OPT is unavailable. Install os-lem-opt in the backend Python environment and restart.')
+
+
+class OptimisationPlanRequest(BaseModel):
+    bounds: List[Dict[str, Any]]
+    budget: int = 48
+
+
+class OptimisationEvaluationRequest(SimulationRequest):
+    objective: Dict[str, float]
+    volume_l: float
+
+
+@app.post('/api/optimise/plan')
+def optimisation_plan(request: OptimisationPlanRequest):
+    opt = _workshop_opt()
+    try:
+        return {'candidates': opt.candidate_plan(request.bounds, request.budget)}
+    except (ValueError, KeyError, TypeError) as error:
+        raise HTTPException(status_code=422, detail=str(error))
+
+
+@app.post('/api/optimise/evaluate')
+def optimisation_evaluate(request: OptimisationEvaluationRequest):
+    opt = _workshop_opt()
+    # Exact same simulation adapter, including combined SPL and group delay.
+    response = perform_simulation(request)
+    try:
+        return {**response, 'evaluation': opt.evaluate(response['data'], request.objective, request.volume_l)}
+    except (ValueError, KeyError, TypeError) as error:
+        raise HTTPException(status_code=422, detail=str(error))
+
+
 if __name__ == "__main__":
     uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)
