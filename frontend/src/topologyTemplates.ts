@@ -8,15 +8,21 @@ export const closedBoxTemplate: GraphSnapshot = {
       position: { x: 250, y: 150 },
       data: {
         type: 'driver',
-        label: '12NW100 Driver',
+        // Historical unverified explicit seed: Re=5 ohm, Le=1.4 mH,
+        // Bl=21.3 N/A, Mms=94 g, Cms=0.15 mm/N, Rms=4.1 Ns/m, Sd=531 cm2.
+        // Convert it once to the supported ts_classic parameterization using
+        // the accepted kernel's RHO0/C0 conventions. Do not mix in generic TS
+        // defaults or present these unsourced values as measured 12NW100 data.
+        label: 'Legacy reference driver (derived TS; unverified)',
         model: 'ts_classic',
         Sd: 531,
-        Bl: 21.3,
         Re: 5.0,
-        Mms: 94,
-        Cms: 0.15,
-        Rms: 4.1,
         Le: 1.4,
+        Fs: 42.38484265955805,
+        Qes: 0.2758856393208077,
+        Qms: 6.105685644071086,
+        Vas: 59.98427525495432,
+        source_voltage_rms: 2.83,
       },
     },
     {

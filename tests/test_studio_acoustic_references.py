@@ -11,6 +11,7 @@ import pytest
 from os_lem.api import run_simulation
 from os_lem.constants import C0, RHO0
 from os_lem.elements.radiator import radiator_impedance
+from backend.server import SimulationRequest, perform_simulation
 
 ROOT = Path(__file__).resolve().parents[1] / 'examples' / 'studio-comparison'
 
@@ -50,3 +51,12 @@ def test_reference_matches_direct_network_equations(name):
     spl = 20*np.log10(np.abs(pressure)/20e-6)
     np.testing.assert_allclose(actual.zin_complex_ohm, zin, rtol=1e-8, atol=1e-8)
     np.testing.assert_allclose(actual.series['spl_sum'], spl, rtol=1e-8, atol=1e-8)
+    # The Studio HTTP adapter requests a derived display delay. Its reference
+    # is the unwrapped phase of independently constructed *complex* pressure,
+    # not the phase of SPL magnitudes expressed in dB.
+    expected_delay_ms = -1000 * np.gradient(np.unwrap(np.angle(pressure)), w)
+    response = perform_simulation(SimulationRequest(model_dict=raw, frequencies_hz=f.tolist()))
+    assert response['status'] == 'success'
+    delay_ms = np.asarray(response['data']['properties']['group_delay_ms'])
+    np.testing.assert_allclose(delay_ms, expected_delay_ms, rtol=1e-8, atol=1e-6)
+    assert np.max(np.abs(delay_ms)) > 1
