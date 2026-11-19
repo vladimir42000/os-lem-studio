@@ -81,11 +81,53 @@ const EDITABLE_PARAMETERS: Record<string, string[]> = {
   radiator: ['Sd', 'area_cm2'],
 };
 
-function matchesEditableTemplate(seed: GraphSnapshot | null, current: GraphSnapshot): boolean {
+function hasRequiredPhysicalParameters(topology: TopologyId, nodes: ReactFlowNode[]): boolean {
+  for (const node of nodes) {
+    const data = node.data || {};
+    let required: string[][] = [];
+    if (data.type === 'driver') {
+      if (data.model !== 'ts_classic' || ['Bl','Mms','Cms','Rms'].some(k => k in data)) return false;
+      required = [['Re'],['Le'],['Fs'],['Qes'],['Qms'],['Vas'],['Sd'],['source_voltage_rms']];
+    } else if (data.type === 'volume') {
+      required = [['Vb','volume_l']];
+    } else if (data.type === 'duct') {
+      required = [['areaCm2','area_cm2','Area','Sd','portAreaCm2','Ap','port_area_cm2'],
+                  ['lengthCm','length_cm','Length','Lp','portLengthCm','port_length_cm','L']];
+    } else if (data.type === 'waveguide_1d') {
+      required = [['areaCm2'],['lengthCm']];
+    } else if (data.type === 'radiator') {
+      required = [['Sd','area_cm2']];
+    }
+    for (const alternatives of required) {
+      const present = alternatives.filter(k => Object.prototype.hasOwnProperty.call(data,k));
+      if (!present.length) return false;
+      const first = data[present[0]];
+      if (present.some(key => typeof data[key] !== 'number' || !Number.isFinite(data[key]) ||
+                    data[key] <= 0 || data[key] !== first)) return false;
+    }
+  }
+  if (topology === 'bass_reflex' || topology === 'transmission_line') {
+    const driver = nodes.find(node => node.data?.type === 'driver');
+    const frontRadiator = nodes.find(node => node.data?.type === 'radiator');
+    if (!driver || !frontRadiator || driver.data.Sd !== (frontRadiator.data.Sd ?? frontRadiator.data.area_cm2)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function matchesEditableTemplate(seed: GraphSnapshot | null, current: GraphSnapshot, topology: TopologyId): boolean {
   if (!seed) return false;
+  if (!hasRequiredPhysicalParameters(topology,current.nodes)) return false;
+  const seedNodes = new Map(seed.nodes.map(node => [String(node.id), node]));
   for (const node of current.nodes) {
     const data = node.data || {};
+    const seedData = seedNodes.get(String(node.id))?.data || {};
     for (const key of EDITABLE_PARAMETERS[data.type] || []) {
+      // Deleting a value supplied by the validated seed must not silently
+      // choose the translator's old, physically different fallback.
+      if (Object.prototype.hasOwnProperty.call(seedData, key) &&
+          !Object.prototype.hasOwnProperty.call(data, key)) return false;
       const allowZero = key==='series_resistance_ohm' || (data.type === 'waveguide_1d' && (['driverOffsetCm', 'lossNpPerM'].includes(key) || /^stuffing[123](Start|End|Density)$/.test(key)));
       if (key in data && (typeof data[key] !== 'number' || !Number.isFinite(data[key]) || (allowZero ? data[key] < 0 : data[key] <= 0))) return false;
     }
@@ -164,7 +206,7 @@ function assessFromNormalizedArgs(args: AssessArgsObject): GraphCompilabilityAss
   const matchedPattern = primitiveAssessment.matchedPattern;
 
   if (matchedPattern?.id === CLOSED_BOX_ANCHOR_PATTERN.id) {
-    if (topology === 'closed_box' && matchesEditableTemplate(seedGraph, currentGraph)) {
+    if (topology === 'closed_box' && matchesEditableTemplate(seedGraph, currentGraph, topology)) {
       return buildAssessment(
         'compilable_anchor',
         ['supported Closed Box topology with valid parameters'],
@@ -185,7 +227,7 @@ function assessFromNormalizedArgs(args: AssessArgsObject): GraphCompilabilityAss
 
   if ((topology === 'bass_reflex' && matchedPattern?.id === BASS_REFLEX_SEEDED_PATTERN.id) ||
       (topology === 'transmission_line' && matchedPattern?.id === TRANSMISSION_LINE_PATTERN.id)) {
-    const supported = matchesEditableTemplate(seedGraph, currentGraph);
+    const supported = matchesEditableTemplate(seedGraph, currentGraph, topology);
     return buildAssessment(supported ? 'compilable_anchor' : 'composition_not_yet_compilable',
       [supported ? 'Supported topology with valid parameters' : 'Use positive areas and length, nonnegative attenuation, and a driver offset smaller than line length; keep template connections'],
       supported, primitiveAssessment, exactSeedMatch);

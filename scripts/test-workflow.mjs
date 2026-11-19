@@ -1,28 +1,48 @@
 // Run with the real backend active: node scripts/test-workflow.mjs
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 const require = createRequire(new URL('../frontend/package.json', import.meta.url));
-const ts = require('typescript');
+const { build } = require('esbuild');
 async function load(name) {
-  const source = readFileSync(new URL(`../frontend/src/${name}.ts`, import.meta.url), 'utf8');
-  const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2020 } });
-  return import(`data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`);
+  const entry = new URL(`../frontend/src/${name}.ts`, import.meta.url);
+  const bundle = await build({
+    entryPoints: [entry.pathname], bundle: true, write: false,
+    format: 'esm', platform: 'node', target: 'es2020',
+  });
+  return import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`);
 }
 const { buildModelDict } = await load('translator');
 const { runSimulationThin } = await load('thinRunner');
 const { computeRunnerStateTruth } = await load('lifecycleTruth');
-const nodes = [
-  {id:'driver',data:{type:'driver'}},
-  {id:'box',data:{type:'volume',Vb:18}},
-  {id:'front',data:{type:'radiator'}},
-];
-const model = buildModelDict(nodes, []);
+const {closedBoxTemplate,bassReflexTemplate,transmissionLineTemplate}=await load('topologyTemplates');
+const nodes = structuredClone(closedBoxTemplate.nodes);
+const model = buildModelDict(nodes, closedBoxTemplate.edges);
 const frequenciesHz = Array.from({length:150},(_,i)=>20*Math.pow(50,i/149));
 const options = {canonicalModel:model,frequenciesHz,backendUrl:process.env.STUDIO_TEST_BACKEND_URL || 'http://127.0.0.1:8000/api/simulate'};
 const first = await runSimulationThin(options);
 assert.equal(first.frequencies_hz.length,150);
 assert(first.series.spl_front.every(Number.isFinite));
+assert.equal(model.elements.filter(e=>e.type==='volume').length,1);
+assert.equal(model.elements.filter(e=>e.type==='radiator').length,1);
+assert.equal(first.properties.zin_complex_ohm.length,150);
+assert.equal(first.properties.group_delay_ms.length,150);
+assert(first.properties.group_delay_ms.every(Number.isFinite));
+assert(first.properties.group_delay_ms.some(value=>Math.abs(value)>.01), 'Closed Box pressure-derived HTTP group delay must not be zero');
+assert(first.properties.zin_mag_ohm.every((value,index)=>
+  Math.abs(value-Math.hypot(first.properties.zin_complex_ohm[index].real,first.properties.zin_complex_ohm[index].imag))<1e-9));
+const originalExplicit=structuredClone(model);
+originalExplicit.driver={
+  id:'drv1',model:'em_explicit',Re:'5 ohm',Le:'1.4 mH',Bl:21.3,
+  Mms:.094,Cms:.00015,Rms:4.1,Sd:'531 cm2',source_voltage_rms:2.83,
+  node_front:'front',node_rear:'rear',
+};
+const explicitResult=await runSimulationThin({...options,canonicalModel:originalExplicit});
+first.properties.zin_complex_ohm.forEach((z,i)=>{
+  const expected=explicitResult.properties.zin_complex_ohm[i];
+  assert(Math.hypot(z.real-expected.real,z.imag-expected.imag)<1e-9);
+  assert(Math.abs(first.series.spl_front[i]-explicitResult.series.spl_front[i])<1e-9);
+});
+console.log('PASS: named Closed Box TS seed matches the legacy explicit-driver physical model across the real-kernel HTTP sweep.');
 const originalKey = JSON.stringify(model);
 const lifecycle = (current,key=originalKey,source='graph-derived') => computeRunnerStateTruth({
   simulationResult:first,latestResultCanonicalModelSnapshotKey:key,
@@ -50,18 +70,36 @@ for (const [fetchImpl, pattern] of [
 }
 await assert.rejects(runSimulationThin({...options,canonicalModel:{}}));
 console.log('PASS: real-kernel run, edit/rerun, JSON save/load round trip, result ownership, and failure handling.');
-const {bassReflexTemplate,transmissionLineTemplate}=await load('topologyTemplates');
 for(const [name,template] of [['bass_reflex',bassReflexTemplate],['transmission_line',transmissionLineTemplate]]) {
   const canonical=buildModelDict(template.nodes,template.edges);
   assert.equal(canonical.meta.studio_topology,name);
   const frequencyGrid=Array.from({length:600},(_,i)=>10*100**(i/599));
   const run=canonicalModel=>runSimulationThin({...options,canonicalModel,frequenciesHz:frequencyGrid});
   const baseline=await run(canonical);
+  assert.equal(canonical.elements.filter(e=>e.type==='volume').length,name==='bass_reflex'?1:0);
+  assert.equal(canonical.elements.filter(e=>e.type==='duct').length,name==='bass_reflex'?1:0);
+  assert.equal(canonical.elements.filter(e=>e.type==='waveguide_1d').length,name==='transmission_line'?1:0);
+  assert.equal(canonical.elements.filter(e=>e.type==='radiator').length,2);
+  if(name==='bass_reflex') {
+    const duct=canonical.elements.find(e=>e.type==='duct');
+    assert.equal(duct.node_a,'rear');assert.equal(duct.node_b,'vent_mouth');
+    assert.equal(duct.area,canonical.elements.find(e=>e.id==='port_rad').area);
+    assert.equal(canonical.elements.find(e=>e.id==='port_rad').node,'vent_mouth');
+  }
   for(const key of ['spl_sum','spl_front',name==='bass_reflex'?'spl_port':'spl_mouth']) {
     assert.equal(baseline.series[key].length,600);
     assert(baseline.series[key].every(Number.isFinite));
   }
   assert(baseline.series.spl_sum.some((v,i)=>Math.abs(v-baseline.series.spl_front[i])>1));
+  assert.equal(baseline.properties.zin_complex_ohm.length,600);
+  assert.equal(baseline.properties.group_delay_ms.length,600);
+  assert(baseline.properties.group_delay_ms.every(Number.isFinite));
+  assert(baseline.properties.group_delay_ms.some(value=>Math.abs(value)>.01), `${name} pressure-derived HTTP group delay must not be zero`);
+  assert.equal(baseline.properties.cone_excursion_mm.length,600);
+  baseline.properties.cone_excursion_mm.forEach((mm,i)=>{
+    const motion=baseline.series.cone_displacement[i];
+    assert(Math.abs(mm-1000*Math.hypot(motion.real,motion.imag))<1e-7);
+  });
   const saved=JSON.parse(JSON.stringify(canonical));
   assert.deepEqual((await run(saved)).series,baseline.series);
   const renamed=structuredClone(template);renamed.nodes.forEach(n=>n.data.label='vent port');
@@ -130,7 +168,6 @@ for(const [name,patch] of [
 }
 
 // Check complete tuning memories with an actual serialized kernel result.
-const {build}=require('esbuild');
 const tuningBundle=await build({entryPoints:[new URL('../frontend/src/tuningState.ts',import.meta.url).pathname],bundle:true,write:false,format:'esm',platform:'node'});
 const tuning=await import(`data:text/javascript;base64,${Buffer.from(tuningBundle.outputFiles[0].text).toString('base64')}`);
 const tuningGraph=structuredClone(bassReflexTemplate);
@@ -138,11 +175,33 @@ const tuningModel=buildModelDict(tuningGraph.nodes,tuningGraph.edges);
 const tuningResult=await runSimulationThin({...options,canonicalModel:tuningModel});
 let session={version:1,workspace:{topology:'bass_reflex',graph:tuningGraph,seed:structuredClone(bassReflexTemplate),override:null,pins:['bass_reflex:node_volume_1:Vb']},result:{model:tuningModel,data:tuningResult,source:'graph-derived'},memories:[],nextId:1,referenceId:null};
 session=tuning.memorise(session,tuningModel);
-assert.deepEqual(tuning.parseSession(JSON.stringify(session)),session);
+// JSON normalizes IEEE negative zero to zero; test the persisted JSON contract.
+assert.deepEqual(tuning.parseSession(JSON.stringify(session)),JSON.parse(JSON.stringify(session)));
 session.workspace.graph.nodes.find(n=>n.data.type==='volume').data.Vb=42;
 const editedModel=buildModelDict(session.workspace.graph.nodes,session.workspace.graph.edges);
 assert.throws(()=>tuning.memorise(session,editedModel));
 session=tuning.recall(session,1);
-assert.deepEqual(session.result.data,tuningResult);
+assert.deepEqual(session.result.data,JSON.parse(JSON.stringify(tuningResult)));
 assert.deepEqual(buildModelDict(session.workspace.graph.nodes,session.workspace.graph.edges),tuningModel);
 console.log('PASS: real-kernel complete memory/session save-load, stale-memory rejection and whole-model recall.');
+
+// Negative requests must remain explicit failures through the actual HTTP backend.
+const rejectsKernel=async(model,pattern,frequenciesHz=tlGrid)=>
+  assert.rejects(runSimulationThin({...options,canonicalModel:model,frequenciesHz}),pattern);
+const badGeometry=structuredClone(model);
+badGeometry.elements.find(e=>e.type==='volume').value='-18 l';
+await rejectsKernel(badGeometry,/must be > 0/);
+const missingParameter=structuredClone(model);
+delete missingParameter.elements.find(e=>e.type==='volume').value;
+await rejectsKernel(missingParameter,/Missing required volume field/);
+const unsupported=structuredClone(model);
+unsupported.elements[0].type='unsupported_resonator';
+await rejectsKernel(unsupported,/Unsupported element type/);
+const malformedFrequency=structuredClone(model);
+await rejectsKernel(malformedFrequency,/frequenc|positive|strictly/i,[-10,20,30]);
+if(process.env.STUDIO_TEST_EXPECT_REJECT_FLOW_RESISTIVITY==='1') {
+  const incompatible=tlModel({});
+  incompatible.elements.find(e=>e.type==='waveguide_1d').flow_resistivity=1000;
+  await rejectsKernel(incompatible,/Unknown waveguide_1d fields/);
+}
+console.log('PASS: actual HTTP rejects negative geometry, missing field, unsupported element, invalid sweep and (when pinned) incompatible kernel field.');
