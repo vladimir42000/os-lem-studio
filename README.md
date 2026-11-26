@@ -2,6 +2,23 @@
 
 React/Vite frontend + FastAPI backend adapter for os-lem.
 
+## Reproduce the stage 1 integration
+
+From this checkout, run `bash scripts/verify_stage1.sh`. On Linux, install Git,
+Python 3.12 with venv, Node.js with npm, and the system libraries required by
+Gmsh (including libGLU.so.1). The verified host used Node 24.22.3. The script
+installs the Python Gmsh package and all four repository revisions into a new
+temporary directory. Its path is printed first and contains the generated CSV,
+JUnit reports and source checkouts after the run.
+
+The four application commits are pinned in `integration/stage1.json`.
+The Studio SHA identifies the application under test. This verification branch
+adds the runner, dependency lock, manifest and these instructions. The run checks
+the frontend build, four Python suites with zero skips, the unfilled TL against
+its 600-row reference, resistivity sensitivity in the zoned TL, and the six
+FreeCAD horn samples at 1 V RMS and 1 m. The absolute tolerances for reproducing
+the CAD fixture are 1e-6 ohm in complex impedance and 1e-5 dB in SPL.
+
 ## Supported development workflows
 
 Closed Box, Bass Reflex and a transmission line with linear-area taper, offset driver and attenuation can be edited,
