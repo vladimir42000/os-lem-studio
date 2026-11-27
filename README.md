@@ -19,11 +19,47 @@ its 600-row reference, resistivity sensitivity in the zoned TL, and the six
 FreeCAD horn samples at 1 V RMS and 1 m. The absolute tolerances for reproducing
 the CAD fixture are 1e-6 ohm in complex impedance and 1e-5 dB in SPL.
 
+## FreeCAD horn with a driver
+
+Verify the current Studio commit from a pushed checkout with
+`STUDIO_SHA="$(git rev-parse HEAD)" bash scripts/verify_stage1.sh`.
+The other three SHAs and the Python and npm locks are kept. Use the printed
+verification directory to start both services in separate terminals:
+
+```bash
+# Terminal 1, from the verification directory
+source venv/bin/activate
+cd os-lem-studio
+python -m uvicorn backend.server:app --port 8000
+```
+
+```bash
+# Terminal 2, from the verification directory
+cd os-lem-studio/frontend
+npm run dev
+```
+
+Open the Vite URL and select **FreeCAD horn**. Load
+`ausolveris/examples/freecad/conical-fixture/air-volume.stl` and
+`ausolveris/examples/freecad/illustrative-driver.json`. Choose mm and confirm
+the cap orientation. Use 6 mm, 1 V RMS, 1 m and the six default frequencies.
+Select **Run horn sweep**, then **Download sweep CSV**. Both curves and the
+table use that CSV. For other installations set `AUSOLVERIS_ROOT` to the pinned
+checkout if it is not a sibling of Studio. The backend uses its own Python
+interpreter for the solver, including Gmsh and the installed OS-LEM kernel.
+
+With both servers running and Chromium and Python Playwright available, repeat
+the upload, invalid-wall recovery, download and replacement-geometry checks:
+
+```bash
+python os-lem-studio/scripts/check_freecad_browser.py ausolveris/examples/freecad browser-downloads
+```
+
 ## Supported development workflows
 
 Closed Box, Bass Reflex and a transmission line with linear-area taper, offset driver and attenuation can be edited,
 simulated, saved and loaded. Results include SPL and electrical impedance; BR/TL
-also expose separate driver/outlet SPL and displacement. Horn is not yet runnable.
+also expose separate driver/outlet SPL and displacement. The graph Horn seed is separate from the FreeCAD workflow.
 These are fixed topologies; arbitrary graph wiring remains restricted.
 
 [Reference cases and Hornresp/Akabak comparison instructions](examples/studio-comparison/README.md)

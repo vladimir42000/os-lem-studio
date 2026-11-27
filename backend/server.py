@@ -15,7 +15,15 @@ except ImportError:
     run_simulation = None
 
 
+try:
+    from backend.cad_horn import router as cad_router
+except ModuleNotFoundError as exc:
+    if exc.name != "backend":
+        raise
+    from cad_horn import router as cad_router
+
 app = FastAPI()
+app.include_router(cad_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

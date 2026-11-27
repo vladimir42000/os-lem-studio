@@ -1,3 +1,4 @@
+import FreeCadHorn from './FreeCadHorn'
 import TLAdaptivePanel from './TLAdaptivePanel';
 import BRAlignments from './BRAlignments';
 import OptimisationPanel from './OptimisationPanel';
@@ -336,7 +337,7 @@ export default function App() {
   const draggingRef = useRef(false);
   const gesturePriorCurve = useRef<ResultRecord|null>(null);
   const attemptedKey = useRef('');
-  const [activeView, setActiveView] = useState<'model' | 'results' | 'files'>('model');
+  const [activeView, setActiveView] = useState<'model' | 'results' | 'files' | 'cad'>('model');
   const [selectedTopology, setSelectedTopology] = useState<TopologyId>(restored?.workspace.topology ?? 'closed_box');
   const [seedGraph, setSeedGraph] = useState<GraphSnapshot>(() => cloneGraphSnapshot(restored?.workspace.seed ?? initialSeedGraph));
   const [nodes, setNodes] = useState<ReactFlowNode[]>(() => cloneGraphSnapshot(restored?.workspace.graph ?? initialSeedGraph).nodes);
@@ -804,7 +805,7 @@ export default function App() {
             Loudspeaker simulation • development preview
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{ display: activeView === 'cad' ? 'none' : 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <StatusBadge text={formatGraphAssessmentStatus(graphAssessment.status)} tone={statusTone} />
           <button
             onClick={handleUndo}
@@ -846,14 +847,15 @@ export default function App() {
       </div>
 
       <nav className="workspace-tabs" aria-label="Workspace views">
-        {(['model', 'results', 'files'] as const).map((view) => (
+        {(['model', 'results', 'files', 'cad'] as const).map((view) => (
           <button key={view} aria-pressed={activeView === view} onClick={() => setActiveView(view)}>
-            {view === 'model' ? 'Model' : view === 'results' ? 'Results' : 'Files & details'}
+            {view === 'model' ? 'Model' : view === 'results' ? 'Results' : view === 'cad' ? 'FreeCAD horn' : 'Files & details'}
           </button>
         ))}
-        <span role="status">{isSimulating ? 'Calculating…' : resultStateLabel}</span>
+        <span hidden={activeView === 'cad'} role="status">{isSimulating ? 'Calculating…' : resultStateLabel}</span>
       </nav>
-      {runError ? <div role="alert" className="run-error">{runError}</div> : null}
+      {activeView === 'cad' && <FreeCadHorn />}
+      {runError && activeView !== 'cad' ? <div role="alert" className="run-error">{runError}</div> : null}
 
       <div hidden={activeView !== 'model'} style={{ padding: '12px 15px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
