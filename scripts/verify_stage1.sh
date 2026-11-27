@@ -12,12 +12,15 @@ python3.12 -m venv venv
 source venv/bin/activate
 python - "$manifest_dir/stage1.json" <<'PY'
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
 import sys
 
 for repo, sha in json.loads(Path(sys.argv[1]).read_text())["repositories"].items():
+    if repo == "os-lem-studio":
+        sha = os.environ.get("STUDIO_SHA", sha)
     if not re.fullmatch("[0-9a-f]{40}", sha):
         raise ValueError(f"{repo} needs an exact Git SHA")
     subprocess.run(["git", "init", "-q", repo], check=True)

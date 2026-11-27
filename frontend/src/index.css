@@ -176,3 +176,8 @@ button[aria-pressed="true"] {background:#185184;color:white;}
 .workshop-optimisation { flex:1; min-height:0; overflow:auto; padding:5px; }
 .manual-workshop { display:flex; flex-direction:column; flex:1; min-height:0; }
 .manual-workshop[hidden], .workshop-optimisation[hidden] { display:none; }
+.cad-horn { padding: 1rem 1.5rem 3rem; max-width: 65rem; }
+.cad-horn fieldset { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; margin: 1rem 0; padding: 1rem; border: 1px solid #cbd5e1; }
+.cad-horn fieldset p { width: 100%; margin: 0; }
+.cad-horn td, .cad-horn th { padding: .4rem .8rem; text-align: right; }
+.cad-horn table { margin-top: .75rem; font-variant-numeric: tabular-nums; }
